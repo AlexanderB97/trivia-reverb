@@ -45,7 +45,7 @@ Celular / Host  ──HTTP (fetch)──▶  Laravel  ──HTTP firmado──�
 
 - **Backend:** PHP 8.3, Laravel 13, Laravel Reverb
 - **Frontend:** Blade, JavaScript, Laravel Echo (pusher-js), Vite
-- **Base de datos:** MySQL o SQLite (banco de preguntas y cache)
+- **Base de datos:**SQLite (banco de preguntas y cache)
 - **IA:** API de Google Gemini
 - **QR:** chillerlan/php-qrcode (se genera en el servidor, funciona sin internet)
 
