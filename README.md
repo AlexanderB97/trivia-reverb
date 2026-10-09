@@ -1,58 +1,144 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Trivia en Vivo · Laravel + Reverb + IA
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Juego de preguntas en tiempo real, estilo Kahoot, para repasar los contenidos de **Programación IV** (Tecnicatura Universitaria en Programación, UTN FRRe, sede Formosa).
 
-## About Laravel
+Una pantalla principal (el **host**, pensada para el proyector) muestra preguntas generadas con IA sobre la materia. Los jugadores se unen desde el celular escaneando un código QR, responden en 4 botones de colores y el ranking se actualiza al instante, sin recargar la página.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+![Flujo de la trivia](docs/flujo-trivia-simple.png)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+---
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Funcionalidades
 
-## Learning Laravel
+- **Tiempo real con WebSockets:** Laravel Reverb como servidor y Laravel Echo en el navegador.
+- **Preguntas generadas con IA** (Google Gemini) sobre los temas de la planificación de la materia, con su explicación.
+- **Banco de preguntas en base de datos:** se generan por lotes antes de jugar, así la partida no depende de la IA en vivo.
+- **Modo automático:** el host toca "Empezar" una vez y las rondas avanzan solas: pregunta, cuenta regresiva, revelación y ranking.
+- **Puntos por velocidad:** entre 500 y 1000 puntos por respuesta correcta, según qué tan rápido se respondió.
+- **Ranking en vivo** en el proyector y en cada celular, con empates calculados en el servidor y podio final.
+- **Ingreso por QR** desde el celular.
+- **Seguridad:** PIN para el host, middleware, rate limiting, token por jugador, CSRF, y la respuesta correcta nunca viaja antes de tiempo.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Cómo funciona
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+Celular / Host  ──HTTP (fetch)──▶  Laravel  ──HTTP firmado──▶  Reverb  ══WebSocket══▶  todos los navegadores
+                                     │
+                                     ├── corrige y suma puntos (el servidor decide)
+                                     ├── guarda el estado del juego (Cache)
+                                     └── banco de preguntas (MySQL / SQLite) ◀── IA Gemini (por lotes)
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+**Regla de oro:** el navegador **pide** por HTTP, el servidor **decide** y Reverb **avisa** a todos por WebSocket.
 
-## Contributing
+### Eventos que viajan por el canal `trivia`
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Evento | Cuándo | Qué lleva |
+|---|---|---|
+| `JugadorUnido` | Un jugador entra a la sala | Nombre y cantidad de jugadores |
+| `PreguntaLanzada` | Empieza una pregunta | Tema, texto, opciones y hora de cierre (**sin** la respuesta correcta) |
+| `RespuestaRecibida` | Un jugador responde | Nombre y cantidad de respuestas (no dice si acertó) |
+| `ResultadoRevelado` | Se cierra la pregunta | Respuesta correcta, explicación y ranking con puestos |
+| `PartidaReiniciada` | El host reinicia | — |
 
-## Code of Conduct
+## Tecnologías
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- **Backend:** PHP 8.3, Laravel 13, Laravel Reverb
+- **Frontend:** Blade, JavaScript, Laravel Echo (pusher-js), Vite
+- **Base de datos:** MySQL o SQLite (banco de preguntas y cache)
+- **IA:** API de Google Gemini
+- **QR:** chillerlan/php-qrcode (se genera en el servidor, funciona sin internet)
 
-## Security Vulnerabilities
+## Requisitos
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- PHP 8.3 o superior
+- Composer
+- Node.js y npm
+- Una API key de Gemini ([Google AI Studio](https://aistudio.google.com))
 
-## License
+## Instalación
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+git clone https://github.com/AlexanderB97/trivia-reverb.git
+cd trivia-reverb
+
+composer install
+npm install
+
+cp .env.example .env
+php artisan key:generate
+php artisan reverb:install      # genera REVERB_APP_ID, KEY y SECRET
+php artisan migrate
+```
+
+### Variables del `.env`
+
+| Variable | Valor | Para qué |
+|---|---|---|
+| `BROADCAST_CONNECTION` | `reverb` | Los eventos se emiten por Reverb |
+| `QUEUE_CONNECTION` | `sync` | Los eventos se envían al instante, sin worker de colas |
+| `REVERB_HOST` | `localhost` o la IP de la notebook | Dónde está Reverb. Para jugar desde celulares, usar la IP de la red. |
+| `REVERB_PORT` / `REVERB_SCHEME` | `8080` / `http` | Puerto y protocolo de Reverb |
+| `GEMINI_API_KEY` | tu clave | Acceso a la IA (**secreta**, nunca con prefijo `VITE_`) |
+| `GEMINI_MODEL` | por ejemplo `gemini-3.5-flash` | Modelo de Gemini a usar |
+| `TRIVIA_HOST_PIN` | un número | PIN para entrar a `/host` |
+| `TRIVIA_URL_JUGAR` | (opcional) | URL fija para el QR. Si queda vacía, se arma con `REVERB_HOST`. |
+
+> Las variables `VITE_*` se escriben dentro del JavaScript al compilar: si cambiás `REVERB_HOST`, volvé a correr `npm run build`.
+
+## Uso
+
+### 1. Generar el banco de preguntas (antes de jugar)
+
+```bash
+php artisan trivia:generar 30     # genera 30 preguntas en lotes de 10
+php artisan trivia:reciclar       # vuelve a habilitar las preguntas ya usadas
+```
+
+### 2. Levantar los servidores
+
+```bash
+npm run build
+php artisan serve --host=0.0.0.0 --port=8000
+php artisan reverb:start --host=0.0.0.0
+```
+
+### 3. Jugar
+
+- **Host (proyector):** `http://localhost:8000/host` → ingresar el PIN → configurar la partida → **Empezar**.
+- **Jugadores:** escanear el QR que muestra el host, o entrar a `http://IP-DE-LA-NOTEBOOK:8000/jugar`.
+
+### Jugar desde celulares en la misma red
+
+1. `ipconfig` (Windows) para ver la IP de la notebook.
+2. Poner esa IP en `REVERB_HOST`, después correr `npm run build` y `php artisan config:clear`.
+3. La red Wi-Fi tiene que estar como **Privada**, con los puertos **8000** y **8080** permitidos en el firewall.
+4. Celulares y notebook en la **misma red** (o en el hotspot de un celular).
+
+## Estructura principal
+
+```
+app/
+├── Console/Commands/          trivia:generar, trivia:reciclar
+├── Events/                    eventos que viajan por Reverb
+├── Http/Controllers/          TriviaController (lógica del juego)
+├── Http/Middleware/           EnsureTriviaHost (PIN del host)
+├── Models/Pregunta.php        banco de preguntas
+└── Services/                  GeneradorPreguntas (IA Gemini)
+config/trivia.php              temas de la materia, PIN, URL del QR
+resources/views/trivia/        host.blade.php, jugar.blade.php, pin.blade.php
+routes/web.php
+```
+
+## Seguridad
+
+- La **respuesta correcta** solo se envía en `ResultadoRevelado`, cuando la pregunta ya está cerrada.
+- **Corrige el servidor**, no el navegador. Rechaza respuestas fuera de tiempo o repetidas.
+- Las rutas del host están protegidas por **PIN + middleware** (403 sin autorización).
+- **Rate limiting** en el login del PIN, en las rutas que llaman a la IA y en las respuestas.
+- Un navegador puede **escuchar** el canal, pero no **publicar**: para publicar hace falta firmar con `REVERB_APP_SECRET`, que solo tiene el servidor.
+- Las claves (`.env`) **no** se suben al repositorio.
+
+---
+
+Proyecto realizado para **Programación IV** · TUP · UTN FRRe, sede Formosa · 2026
