@@ -17,12 +17,18 @@ class ResultadoRevelado implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
-     * @param  array<int, array{nombre: string, puntos: int}>  $ranking  ordenado de mayor a menor
+     * @param  array<int, array{nombre: string, puntos: int, ganados: int, puesto: int}>  $ranking
+     *         ordenado de mayor a menor; "ganados" son los puntos de esta pregunta y
+     *         "puesto" ya contempla empates (mismo puntaje = mismo puesto)
+     * @param  bool  $final  true si era la última pregunta de la partida
      */
     public function __construct(
         public int $correcta,
         public string $explicacion,
         public array $ranking,
+        public int $numero,
+        public int $total,
+        public bool $final,
     ) {
     }
 

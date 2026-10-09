@@ -74,11 +74,21 @@
     @keyframes rebote { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 
     .pregunta {
+      position: relative; overflow: hidden;
       background: var(--panel); border: 1px solid var(--borde);
-      border-radius: 16px; padding: 18px; text-align: center;
+      border-radius: 16px; padding: 18px 18px 24px; text-align: center;
     }
-    .pregunta .numero { color: var(--suave); font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+    .pregunta .cabecera { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .pregunta .numero { color: var(--suave); font-size: 14px; font-weight: 700; margin: 0; }
+    .reloj {
+      min-width: 44px; height: 44px; border-radius: 22px; padding: 0 10px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #6c5ce7; font-size: 20px; font-weight: 800;
+    }
+    .reloj.urgente { background: var(--rojo); }
+    .pregunta .tema { color: var(--amarillo); font-size: 12px; font-weight: 600; line-height: 1.35; margin: 0 0 8px; }
     .pregunta h2 { font-size: 20px; font-weight: 800; line-height: 1.3; margin: 0; }
+    .barra-tiempo { position: absolute; left: 0; bottom: 0; height: 6px; background: var(--amarillo); transition: width .2s linear; }
 
     .opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .opcion {
@@ -102,18 +112,85 @@
     .mensaje-info { background: #2b2f63; color: #c9ccff; }
     .mensaje-error { background: rgba(255, 92, 116, .15); border: 1px solid var(--error); color: var(--error); }
 
-    .resultado {
-      border-radius: 20px; padding: 28px 20px; text-align: center;
+    /* Pantalla de resultado: el orden cambia si terminó la partida (con "order" de flexbox) */
+    #pantalla-resultado { justify-content: flex-start; gap: 14px; padding-bottom: 8px; }
+    #final { order: 1; }
+    #ronda { order: 2; }
+    #tarjeta-ranking { order: 3; }
+    #texto-siguiente { order: 4; }
+    #pantalla-resultado.es-final #tarjeta-ranking { order: 2; }
+    #pantalla-resultado.es-final #ronda { order: 3; }
+
+    /* Resultado de la pregunta (con su explicación). Al final de la partida se vuelve plegable. */
+    .ronda {
+      border-radius: 20px; padding: 20px 18px; text-align: center;
       background: var(--panel); border: 2px solid var(--borde);
     }
-    .resultado.bien { border-color: var(--ok); background: rgba(61, 220, 132, .12); }
-    .resultado.mal { border-color: var(--error); background: rgba(255, 92, 116, .12); }
-    .resultado h2 { font-size: 30px; font-weight: 800; margin: 0 0 10px; }
-    .resultado .era { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
-    .marcador { display: flex; justify-content: center; gap: 28px; }
-    .marcador div { font-size: 14px; color: var(--suave); font-weight: 600; }
-    .marcador b { display: block; font-size: 36px; color: var(--texto); }
-    .explicacion { color: #d6d8ff; font-size: 16px; line-height: 1.5; margin: 0; text-align: center; }
+    .ronda.bien { border-color: var(--ok); background: rgba(61, 220, 132, .12); }
+    .ronda.mal { border-color: var(--error); background: rgba(255, 92, 116, .12); }
+    .ronda summary { display: none; } /* durante la partida no se puede plegar */
+    .ronda h2 { font-size: 28px; font-weight: 800; margin: 0 0 6px; }
+    .ronda .era { font-size: 18px; font-weight: 600; margin: 0 0 10px; }
+    .explicacion { color: #d6d8ff; font-size: 15px; line-height: 1.5; margin: 0; }
+    /* Versión compacta y plegable al terminar */
+    .es-final .ronda { padding: 12px 16px; border-width: 1px; text-align: left; }
+    .es-final .ronda summary {
+      display: block; cursor: pointer; font-weight: 700; font-size: 15px; color: var(--suave);
+      list-style: none;
+    }
+    .es-final .ronda summary::-webkit-details-marker { display: none; }
+    .es-final .ronda summary::before { content: '▸ '; }
+    .es-final .ronda[open] summary::before { content: '▾ '; }
+    .es-final .ronda[open] summary { margin-bottom: 10px; }
+    .es-final .ronda h2 { font-size: 18px; }
+    .es-final .ronda .era { font-size: 15px; }
+
+    /* Tarjeta del ranking */
+    .tarjeta-ranking {
+      background: var(--panel); border: 1px solid var(--borde);
+      border-radius: 20px; padding: 16px 12px 12px;
+    }
+    .resumen { font-size: 17px; font-weight: 700; margin: 0 4px 12px; line-height: 1.45; text-align: center; }
+    .resumen .mas { color: var(--ok); }
+
+    .lista-ranking { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .fila {
+      display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 8px;
+      min-height: 40px; padding: 6px 10px; border-radius: 10px;
+      background: #24274d; border: 2px solid transparent;
+      font-size: 15px; font-weight: 600;
+    }
+    .fila .puesto { text-align: center; font-weight: 800; color: var(--suave); }
+    .fila .puesto.medalla { font-size: 20px; }
+    .fila .nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fila .pts { text-align: right; font-weight: 800; white-space: nowrap; }
+    .fila .pts small { display: block; font-size: 11px; font-weight: 700; color: var(--ok); line-height: 1; }
+    /* Mi fila: siempre resaltada */
+    .fila.yo { background: rgba(216, 158, 0, .18); border-color: var(--amarillo); }
+    .fila.yo .puesto { color: var(--amarillo); }
+    .vos {
+      display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+      background: var(--amarillo); color: #1b1d36; font-size: 11px; font-weight: 800;
+      font-style: normal; vertical-align: middle;
+    }
+    .separador { text-align: center; color: var(--suave); font-weight: 800; letter-spacing: 4px; line-height: 1; padding: 2px 0; }
+
+    .btn-ranking {
+      font: inherit; font-size: 15px; font-weight: 700; width: 100%; margin-top: 10px;
+      padding: 10px; border-radius: 12px; cursor: pointer;
+      background: transparent; color: var(--suave); border: 1px solid var(--borde);
+    }
+    /* Ranking completo: scroll dentro de la tarjeta */
+    .lista-completa { position: relative; max-height: 55vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+
+    /* Mensaje final de la partida */
+    .final {
+      border-radius: 20px; padding: 22px 18px; text-align: center;
+      background: linear-gradient(135deg, #3b2f8f, #1b1d36); border: 2px solid #6c5ce7;
+    }
+    .final .medalla { font-size: 64px; line-height: 1; }
+    .final h2 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; }
+    .final p { margin: 0; color: #c9ccff; font-weight: 600; }
 
     @media (max-width: 380px) {
       .opcion { min-height: 100px; font-size: 14px; }
@@ -132,7 +209,8 @@
     <h1>Trivia <span>en vivo</span></h1>
     <p class="suave centro">Laravel y bases de datos</p>
     <input id="input-nombre" type="text" maxlength="30" placeholder="Tu nombre" autocomplete="off" required>
-    <button class="btn" type="submit">Entrar</button>
+    <p id="error-nombre" class="mensaje mensaje-error oculto"></p>
+    <button id="btn-entrar" class="btn" type="submit">Entrar</button>
   </form>
 
   <!-- 2) Esperando pregunta -->
@@ -145,25 +223,41 @@
   <!-- 3) Pregunta con las 4 opciones -->
   <section id="pantalla-pregunta" class="pantalla oculto">
     <div class="pregunta">
-      <p id="numero" class="numero"></p>
+      <div class="cabecera">
+        <p id="numero" class="numero"></p>
+        <span id="reloj" class="reloj">0</span>
+      </div>
+      <p id="tema" class="tema oculto"></p>
       <h2 id="texto"></h2>
+      <div id="barra-tiempo" class="barra-tiempo" style="width: 100%"></div>
     </div>
     <div id="opciones" class="opciones"></div>
     <p id="mensaje" class="mensaje oculto"></p>
   </section>
 
-  <!-- 4) Resultado de la ronda -->
+  <!-- 4) Resultado de la ronda (y fin de la partida) -->
   <section id="pantalla-resultado" class="pantalla oculto">
-    <div id="resultado" class="resultado">
+    <div id="final" class="final oculto">
+      <div id="final-medalla" class="medalla"></div>
+      <h2 id="final-titulo"></h2>
+      <p id="final-detalle"></p>
+    </div>
+    <!-- Resultado de la pregunta. Es un <details> para poder plegarlo al final de la partida. -->
+    <details id="ronda" class="ronda" open>
+      <summary id="ronda-resumen"></summary>
       <h2 id="resultado-titulo"></h2>
       <p id="resultado-era" class="era"></p>
-      <div class="marcador">
-        <div><b id="mis-puntos">0</b>puntos</div>
-        <div><b id="mi-posicion">-</b>posición</div>
-      </div>
+      <p id="explicacion" class="explicacion"></p>
+    </details>
+
+    <div id="tarjeta-ranking" class="tarjeta-ranking">
+      <p id="resumen" class="resumen"></p>
+      <ol id="ranking-corto" class="lista-ranking"></ol>
+      <ol id="ranking-completo" class="lista-ranking lista-completa oculto"></ol>
+      <button id="btn-ranking" class="btn-ranking" type="button">Ver ranking completo</button>
     </div>
-    <p id="explicacion" class="explicacion"></p>
-    <p class="suave centro">Esperando la próxima pregunta...</p>
+
+    <p id="texto-siguiente" class="suave centro">Esperando la próxima pregunta...</p>
   </section>
 </div>
 
@@ -171,68 +265,154 @@
   document.addEventListener('DOMContentLoaded', function () {
     const FORMAS = ['▲', '◆', '●', '■'];
     const csrf = document.querySelector('meta[name="csrf-token"]').content;
-
-    // Estado del jugador en el navegador
-    let nombre = sessionStorage.getItem('trivia.nombre') || '';
-    let opcionesActuales = [];   // textos de las 4 opciones de la pregunta actual
-    let miEleccion = null;       // índice (0-3) que tocó el jugador, o null si no respondió
-
-    // Referencias a los elementos
-    const pantallas = {
-      nombre: document.getElementById('pantalla-nombre'),
-      espera: document.getElementById('pantalla-espera'),
-      pregunta: document.getElementById('pantalla-pregunta'),
-      resultado: document.getElementById('pantalla-resultado'),
+    const RUTAS = {
+      estado: "{{ route('trivia.estado') }}",
+      unirse: "{{ route('trivia.unirse') }}",
+      responder: "{{ route('trivia.responder') }}",
     };
-    const barra = document.getElementById('barra');
-    const miNombre = document.getElementById('mi-nombre');
-    const inputNombre = document.getElementById('input-nombre');
-    const numero = document.getElementById('numero');
-    const texto = document.getElementById('texto');
-    const opciones = document.getElementById('opciones');
-    const mensaje = document.getElementById('mensaje');
+    const $ = (id) => document.getElementById(id);
+
+    // Estado del jugador en el navegador.
+    // El token lo da el servidor al anotarse: prueba que este nombre es "mío".
+    let nombre = sessionStorage.getItem('trivia.nombre') || '';
+    let token = sessionStorage.getItem('trivia.token') || '';
+    let opcionesActuales = [];  // textos de las 4 opciones de la pregunta actual
+    let miEleccion = null;      // índice (0-3) que tocó el jugador, o null si no respondió
+    let numeroActual = null;    // número de la pregunta en pantalla
+    let deadlineLocal = 0;      // hora (en el reloj de ESTE celular) en que cierra la pregunta
+    let segundosPregunta = 20;
+
+    const pantallas = ['nombre', 'espera', 'pregunta', 'resultado'];
 
     // Muestra solo una de las pantallas
     function mostrarPantalla(cual) {
-      Object.entries(pantallas).forEach(([clave, el]) => el.classList.toggle('oculto', clave !== cual));
-      barra.classList.toggle('oculto', cual === 'nombre');
+      pantallas.forEach((p) => $('pantalla-' + p).classList.toggle('oculto', p !== cual));
+      $('barra').classList.toggle('oculto', cual === 'nombre');
     }
 
-    function mostrarMensaje(textoMensaje, tipo = 'info') {
-      mensaje.textContent = textoMensaje;
-      mensaje.className = 'mensaje mensaje-' + tipo;
-      mensaje.classList.toggle('oculto', !textoMensaje);
+    function mostrarMensaje(texto, tipo = 'info') {
+      $('mensaje').textContent = texto;
+      $('mensaje').className = 'mensaje mensaje-' + tipo;
+      $('mensaje').classList.toggle('oculto', !texto);
     }
 
-    // Bloquea los 4 botones y marca el que eligió el jugador
+    // POST con fetch (token CSRF + JSON). Devuelve { ok, status, json }.
+    async function post(url, datos) {
+      const respuesta = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf,
+        },
+        body: JSON.stringify(datos),
+      });
+      const json = await respuesta.json().catch(() => ({}));
+      return { ok: respuesta.ok, status: respuesta.status, json };
+    }
+
+    // ================================================================
+    // NOMBRE: anotarse en el servidor (nombres únicos)
+    // ================================================================
+
+    // Vuelve a la pantalla de nombre mostrando un error
+    function pedirNombre(error) {
+      $('error-nombre').textContent = error || '';
+      $('error-nombre').classList.toggle('oculto', !error);
+      $('input-nombre').value = nombre;
+      mostrarPantalla('nombre');
+      $('input-nombre').focus();
+    }
+
+    // Se anota con el nombre (si ya estaba anotado con este token, el servidor lo acepta igual)
+    async function unirse(nombreDeseado) {
+      $('btn-entrar').disabled = true;
+      try {
+        const r = await post(RUTAS.unirse, { nombre: nombreDeseado, token: token });
+        if (!r.ok) {
+          pedirNombre(r.json.message || 'No se pudo entrar (error ' + r.status + ').');
+          return false;
+        }
+        // Guardamos el nombre tal como lo registró el servidor y el token
+        nombre = r.json.nombre;
+        token = r.json.token;
+        sessionStorage.setItem('trivia.nombre', nombre);
+        sessionStorage.setItem('trivia.token', token);
+        $('mi-nombre').textContent = nombre;
+        return true;
+      } catch (e) {
+        pedirNombre('No hay conexión con el servidor. Probá de nuevo.');
+        return false;
+      } finally {
+        $('btn-entrar').disabled = false;
+      }
+    }
+
+    // ================================================================
+    // PREGUNTA
+    // ================================================================
+
     function bloquearOpciones(elegida) {
-      [...opciones.children].forEach((btn, i) => {
+      [...$('opciones').children].forEach((btn, i) => {
         btn.disabled = true;
         btn.classList.toggle('elegida', i === elegida);
       });
     }
 
-    // Dibuja la pregunta con 4 botones grandes de colores
-    function mostrarPregunta(n, textoPregunta, listaOpciones) {
-      opcionesActuales = listaOpciones;
+    function desbloquearOpciones() {
+      [...$('opciones').children].forEach((btn) => {
+        btn.disabled = false;
+        btn.classList.remove('elegida');
+      });
+    }
+
+    // Dibuja la pregunta con 4 botones grandes de colores y arranca la cuenta regresiva
+    function mostrarPregunta(p) {
+      numeroActual = p.numero;
+      opcionesActuales = p.opciones;
       miEleccion = null;
-      numero.textContent = 'Pregunta ' + n;
-      texto.textContent = textoPregunta;
+      $('numero').textContent = 'Pregunta ' + p.numero + ' de ' + p.total;
+      $('tema').textContent = p.tema ? 'Tema: ' + p.tema : '';
+      $('tema').classList.toggle('oculto', !p.tema);
+      $('texto').textContent = p.texto;
       mostrarMensaje('');
 
-      opciones.innerHTML = '';
-      listaOpciones.forEach((op, i) => {
+      // El servidor manda su hora ("ahora") y la de cierre: la diferencia es lo que falta,
+      // sin importar si el reloj del celular está adelantado o atrasado
+      deadlineLocal = Date.now() + (p.cierraEn - p.ahora);
+      segundosPregunta = p.segundos;
+
+      $('opciones').innerHTML = '';
+      p.opciones.forEach((op, i) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'opcion op-' + i;
         btn.innerHTML = '<span class="forma">' + FORMAS[i] + '</span><span></span>';
         btn.lastChild.textContent = op; // textContent evita inyectar HTML
         btn.addEventListener('click', () => responder(i));
-        opciones.appendChild(btn);
+        $('opciones').appendChild(btn);
       });
 
+      actualizarReloj();
       mostrarPantalla('pregunta');
     }
+
+    // Cuenta regresiva (se llama cada 200 ms)
+    function actualizarReloj() {
+      if (numeroActual === null) return;
+      const restante = Math.max(0, deadlineLocal - Date.now());
+      $('reloj').textContent = Math.ceil(restante / 1000);
+      $('reloj').classList.toggle('urgente', restante <= 5000);
+      $('barra-tiempo').style.width = (restante / (segundosPregunta * 1000) * 100) + '%';
+
+      // Se acabó el tiempo y no respondió: bloqueamos los botones
+      if (restante === 0 && miEleccion === null && !$('pantalla-pregunta').classList.contains('oculto')) {
+        miEleccion = -1; // -1 = no llegó a responder
+        bloquearOpciones(null);
+        mostrarMensaje('⏱️ ¡Se acabó el tiempo!', 'error');
+      }
+    }
+    setInterval(actualizarReloj, 200);
 
     // Manda la respuesta al servidor
     async function responder(i) {
@@ -242,74 +422,238 @@
       mostrarMensaje('Respuesta enviada. ¡Esperá el resultado!');
 
       try {
-        const respuesta = await fetch("{{ route('trivia.responder') }}", {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-CSRF-TOKEN': csrf,
-          },
-          body: JSON.stringify({ nombre: nombre, opcion: i }),
-        });
-        const json = await respuesta.json().catch(() => ({}));
+        const r = await post(RUTAS.responder, { nombre: nombre, token: token, opcion: i });
+        if (r.ok) return;
 
-        if (!respuesta.ok) {
-          mostrarMensaje(json.message || 'Error ' + respuesta.status, 'error');
-          // 422 = la pregunta se cerró o ya respondiste: no se puede volver a intentar.
-          // Con otros errores (red, servidor ocupado) dejamos reintentar.
-          if (respuesta.status !== 422) {
-            miEleccion = null;
-            [...opciones.children].forEach((btn) => { btn.disabled = false; btn.classList.remove('elegida'); });
-          }
+        mostrarMensaje(r.json.message || 'Error ' + r.status, 'error');
+
+        if (r.json.reingresar) {
+          // El servidor no nos reconoce (por ejemplo, se reinició la partida)
+          pedirNombre(r.json.message);
+        } else if (r.status !== 422) {
+          // Error de red o servidor ocupado (no un 422): dejamos reintentar
+          miEleccion = null;
+          desbloquearOpciones();
         }
+        // Con 422 (tiempo terminado, ya respondió...) los botones quedan bloqueados
       } catch (e) {
         mostrarMensaje('No se pudo enviar la respuesta. Revisá la conexión y tocá de nuevo.', 'error');
         miEleccion = null;
-        [...opciones.children].forEach((btn) => { btn.disabled = false; btn.classList.remove('elegida'); });
+        desbloquearOpciones();
       }
     }
 
-    // Muestra si acertó, la correcta, sus puntos y su posición
-    function mostrarResultado(correcta, textoExplicacion, ranking) {
-      const caja = document.getElementById('resultado');
-      const titulo = document.getElementById('resultado-titulo');
-      const era = document.getElementById('resultado-era');
+    // ================================================================
+    // RESULTADO Y RANKING
+    // ================================================================
 
-      if (miEleccion === correcta) {
-        caja.className = 'resultado bien';
-        titulo.textContent = '✅ ¡Correcto!';
-        era.textContent = opcionesActuales[correcta] ?? '';
+    const MEDALLAS = ['🥇', '🥈', '🥉'];
+    const TOP = 5;                 // filas que se muestran siempre
+    let rankingAbierto = false;    // "Ver ranking completo" (arranca plegado y recuerda la elección)
+
+    // Arma una fila del ranking: puesto (o medalla), nombre (+ "Vos") y puntos (+ ganados).
+    // El puesto viene calculado del servidor (con empates: mismo puntaje = mismo puesto).
+    function crearFila(jugador, esYo, conGanados) {
+      const puesto = jugador.puesto;
+      const li = document.createElement('li');
+      li.className = 'fila' + (esYo ? ' yo' : '');
+      li.innerHTML = '<span class="puesto"></span><span class="nombre"></span><span class="pts"></span>';
+
+      const celdaPuesto = li.children[0];
+      if (puesto <= 3) {
+        celdaPuesto.textContent = MEDALLAS[puesto - 1];
+        celdaPuesto.classList.add('medalla');
       } else {
-        caja.className = 'resultado mal';
-        titulo.textContent = miEleccion === null ? '⏱️ No respondiste' : '❌ Incorrecto';
-        era.textContent = 'Era: ' + (opcionesActuales[correcta] ?? 'opción ' + (correcta + 1));
+        celdaPuesto.textContent = puesto + '°';
       }
 
-      // Buscamos al jugador en el ranking (viene ordenado de mayor a menor)
-      const posicion = ranking.findIndex((j) => String(j.nombre) === nombre);
-      document.getElementById('mis-puntos').textContent = posicion >= 0 ? ranking[posicion].puntos : 0;
-      document.getElementById('mi-posicion').textContent = posicion >= 0 ? (posicion + 1) + '° de ' + ranking.length : '-';
-      document.getElementById('explicacion').textContent = textoExplicacion;
+      li.children[1].textContent = jugador.nombre; // textContent evita inyectar HTML
+      if (esYo) {
+        const vos = document.createElement('em');
+        vos.className = 'vos';
+        vos.textContent = 'Vos';
+        li.children[1].appendChild(vos);
+      }
+
+      li.children[2].textContent = jugador.puntos;
+      if (conGanados && jugador.ganados > 0) {
+        const mas = document.createElement('small');
+        mas.textContent = '+' + jugador.ganados;
+        li.children[2].appendChild(mas);
+      }
+      return li;
+    }
+
+    function crearSeparador() {
+      const li = document.createElement('li');
+      li.className = 'separador';
+      li.textContent = '···';
+      return li;
+    }
+
+    // Dibuja el ranking corto (top 5 + mi zona) y el completo (plegado)
+    function dibujarRanking(ranking, miPos, conGanados) {
+      const corto = $('ranking-corto');
+      const completo = $('ranking-completo');
+      corto.innerHTML = '';
+      completo.innerHTML = '';
+
+      // Top 5 siempre
+      ranking.slice(0, TOP).forEach((j, i) => corto.appendChild(crearFila(j, i === miPos, conGanados)));
+
+      // Si no estoy en el top 5: "···" y mi fila con el de arriba y el de abajo
+      if (miPos >= TOP) {
+        const desde = Math.max(TOP, miPos - 1);
+        const hasta = Math.min(ranking.length - 1, miPos + 1);
+        if (desde > TOP) corto.appendChild(crearSeparador());
+        for (let i = desde; i <= hasta; i++) {
+          corto.appendChild(crearFila(ranking[i], i === miPos, conGanados));
+        }
+      }
+
+      // Lista completa (con scroll dentro de la tarjeta)
+      ranking.forEach((j, i) => completo.appendChild(crearFila(j, i === miPos, conGanados)));
+
+      // El botón solo tiene sentido si hay más gente de la que ya se ve
+      const hayMas = ranking.length > corto.querySelectorAll('.fila').length;
+      $('btn-ranking').classList.toggle('oculto', !hayMas);
+      aplicarRankingAbierto(hayMas && rankingAbierto);
+    }
+
+    // Muestra la lista completa o la corta y centra mi fila dentro del scroll
+    function aplicarRankingAbierto(abierto) {
+      $('ranking-corto').classList.toggle('oculto', abierto);
+      $('ranking-completo').classList.toggle('oculto', !abierto);
+      $('btn-ranking').textContent = abierto
+        ? 'Ocultar ranking completo'
+        : 'Ver ranking completo (' + $('ranking-completo').children.length + ')';
+
+      const miFila = $('ranking-completo').querySelector('.fila.yo');
+      if (abierto && miFila) {
+        const lista = $('ranking-completo');
+        lista.scrollTop = miFila.offsetTop - lista.clientHeight / 2 + miFila.clientHeight / 2;
+      }
+    }
+
+    $('btn-ranking').addEventListener('click', () => {
+      rankingAbierto = !rankingAbierto;
+      aplicarRankingAbierto(rankingAbierto);
+    });
+
+    // Muestra el resultado de la pregunta y el ranking.
+    // correcta === null significa "solo mostrar la posición" (por ej. al recargar con la partida terminada).
+    function mostrarResultado(correcta, textoExplicacion, ranking, final) {
+      numeroActual = null;
+
+      // Buscamos al jugador en el ranking (el puesto con empates ya viene del servidor)
+      const yo = nombre.toLowerCase();
+      const miPos = ranking.findIndex((j) => String(j.nombre).toLowerCase() === yo);
+      const miPuesto = miPos >= 0 ? ranking[miPos].puesto : null;
+
+      // ---- Resultado de la pregunta (¡Correcto! / Incorrecto + explicación) ----
+      const ronda = $('ronda');
+      if (correcta === null) {
+        ronda.classList.add('oculto');
+      } else {
+        const textoCorrecta = opcionesActuales[correcta] ?? 'opción ' + (correcta + 1);
+        let titulo;
+        if (miEleccion === correcta) {
+          ronda.className = 'ronda bien';
+          titulo = '✅ ¡Correcto!';
+          $('resultado-era').textContent = textoCorrecta;
+        } else {
+          ronda.className = 'ronda mal';
+          titulo = (miEleccion === null || miEleccion === -1) ? '⏱️ No respondiste' : '❌ Incorrecto';
+          $('resultado-era').textContent = 'Era: ' + textoCorrecta;
+        }
+        $('resultado-titulo').textContent = titulo;
+        $('explicacion').textContent = textoExplicacion || '';
+        $('ronda-resumen').textContent = 'Última pregunta: ' + titulo;
+        // Durante la partida siempre abierto; al final, plegado (se abre tocando el resumen)
+        ronda.open = !final;
+      }
+
+      // ---- Resumen: "Estás 2° · 1850 pts · +820 · a 550 de Ana" ----
+      const resumen = $('resumen');
+      resumen.innerHTML = '';
+      if (miPos >= 0) {
+        const mio = ranking[miPos];
+        const empatados = ranking.filter((j) => j.puesto === miPuesto).length > 1;
+        let texto = miPuesto === 1
+          ? (empatados ? '¡Vas primero! (empatado)' : '¡Vas primero!')
+          : 'Estás ' + miPuesto + '°' + (empatados ? ' (empatado)' : '');
+        texto += ' · ' + mio.puntos + ' pts';
+        resumen.appendChild(document.createTextNode(texto));
+
+        if (correcta !== null) {
+          const mas = document.createElement('span');
+          mas.className = 'mas';
+          mas.textContent = ' · +' + (mio.ganados || 0);
+          resumen.appendChild(mas);
+        }
+
+        // El de arriba es el último del puesto anterior (el que tiene más puntos que yo)
+        if (miPuesto > 1) {
+          const arriba = ranking[miPuesto - 2];
+          resumen.appendChild(document.createTextNode(' · a ' + (arriba.puntos - mio.puntos) + ' de ' + arriba.nombre));
+        }
+      } else {
+        resumen.textContent = 'Todavía no estás en el ranking.';
+      }
+
+      dibujarRanking(ranking, miPos, correcta !== null);
+
+      // ---- Fin de la partida: mensaje según el puesto ----
+      $('pantalla-resultado').classList.toggle('es-final', !!final);
+      $('final').classList.toggle('oculto', !final);
+      if (final) {
+        const titulos = ['¡Ganaste la partida!', '¡Segundo puesto!', '¡Tercer puesto!'];
+        if (miPuesto !== null && miPuesto <= 3) {
+          $('final-medalla').textContent = MEDALLAS[miPuesto - 1];
+          $('final-titulo').textContent = titulos[miPuesto - 1];
+        } else {
+          $('final-medalla').textContent = '🏁';
+          $('final-titulo').textContent = miPuesto !== null
+            ? 'Terminaste ' + miPuesto + '° de ' + ranking.length
+            : 'Terminó la partida';
+        }
+        $('final-detalle').textContent = miPos >= 0 ? ranking[miPos].puntos + ' puntos en total' : '';
+        $('texto-siguiente').textContent = 'Esperando una nueva partida...';
+      } else {
+        $('texto-siguiente').textContent = 'Esperando la próxima pregunta...';
+      }
 
       mostrarPantalla('resultado');
+      // El scroll del ranking completo solo se puede calcular con la pantalla visible
+      if (rankingAbierto) aplicarRankingAbierto(!$('btn-ranking').classList.contains('oculto'));
     }
+
+    // ================================================================
+    // ESTADO INICIAL
+    // ================================================================
 
     // Pide al servidor el estado actual (para sumarse tarde o tras recargar)
     async function cargarEstado() {
       try {
-        const r = await fetch("{{ route('trivia.estado') }}?nombre=" + encodeURIComponent(nombre), {
+        const r = await fetch(RUTAS.estado + '?nombre=' + encodeURIComponent(nombre), {
           headers: { 'Accept': 'application/json' },
         });
         const estado = await r.json();
 
         if (estado.pregunta) {
-          mostrarPregunta(estado.numero, estado.pregunta.texto, estado.pregunta.opciones);
+          mostrarPregunta({
+            numero: estado.numero, total: estado.total,
+            texto: estado.pregunta.texto, opciones: estado.pregunta.opciones, tema: estado.pregunta.tema,
+            segundos: estado.segundos, cierraEn: estado.cierraEn, ahora: estado.ahora,
+          });
           // Si ya había respondido antes de recargar, dejamos los botones bloqueados
           if (estado.miOpcion !== null) {
             miEleccion = estado.miOpcion;
             bloquearOpciones(miEleccion);
             mostrarMensaje('Ya respondiste. ¡Esperá el resultado!');
           }
+        } else if (estado.terminada) {
+          mostrarResultado(null, '', estado.ranking, true);
         } else {
           mostrarPantalla('espera');
         }
@@ -318,50 +662,56 @@
       }
     }
 
-    // Arranca el juego con el nombre guardado
-    function entrar() {
-      miNombre.textContent = nombre;
-      cargarEstado();
+    // Se anota (o se re-anota) y se pone al día con el estado
+    async function entrar(nombreDeseado) {
+      if (await unirse(nombreDeseado)) {
+        await cargarEstado();
+      }
     }
 
     // ---- Formulario de nombre ----
-    pantallas.nombre.addEventListener('submit', (ev) => {
+    $('pantalla-nombre').addEventListener('submit', (ev) => {
       ev.preventDefault();
-      const valor = inputNombre.value.trim();
+      const valor = $('input-nombre').value.trim();
       if (!valor) return;
-      nombre = valor;
-      sessionStorage.setItem('trivia.nombre', nombre);
-      entrar();
+      // Si cambia de nombre, el token viejo ya no sirve
+      if (valor.toLowerCase() !== nombre.toLowerCase()) token = '';
+      entrar(valor);
     });
 
-    document.getElementById('btn-cambiar').addEventListener('click', () => {
+    $('btn-cambiar').addEventListener('click', () => {
       sessionStorage.removeItem('trivia.nombre');
+      sessionStorage.removeItem('trivia.token');
       nombre = '';
-      inputNombre.value = '';
-      mostrarPantalla('nombre');
-      inputNombre.focus();
+      token = '';
+      pedirNombre('');
     });
 
-    // ---- Eventos en vivo (Reverb + Echo) ----
+    // ================================================================
+    // EVENTOS EN VIVO (Reverb + Echo)
+    // ================================================================
     window.Echo.channel('trivia')
       .listen('.PreguntaLanzada', (e) => {
-        if (!nombre) return; // todavía no ingresó el nombre
-        mostrarPregunta(e.numero, e.texto, e.opciones);
-      })
-      .listen('.RespuestaRecibida', (e) => {
-        // El jugador no necesita hacer nada con esto (lo usa el host)
+        if (!token) return; // todavía no se anotó
+        mostrarPregunta(e);
       })
       .listen('.ResultadoRevelado', (e) => {
-        if (!nombre) return;
-        mostrarResultado(e.correcta, e.explicacion, e.ranking);
+        if (!token) return;
+        mostrarResultado(e.correcta, e.explicacion, e.ranking, e.final);
+      })
+      .listen('.PartidaReiniciada', () => {
+        if (!token) return;
+        // El servidor borró los jugadores: nos volvemos a anotar con el mismo nombre
+        numeroActual = null;
+        mostrarPantalla('espera');
+        entrar(nombre);
       });
 
     // ---- Al cargar ----
     if (nombre) {
-      entrar();
+      entrar(nombre);
     } else {
-      mostrarPantalla('nombre');
-      inputNombre.focus();
+      pedirNombre('');
     }
   });
 </script>

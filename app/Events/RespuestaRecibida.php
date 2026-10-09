@@ -11,6 +11,7 @@ use Illuminate\Queue\SerializesModels;
 /**
  * Se emite cada vez que un jugador responde.
  * Solo avisa quién respondió y cuántos van, NO si acertó.
+ * "jugadores" es el total de anotados: si cantidad == jugadores, respondieron todos.
  */
 class RespuestaRecibida implements ShouldBroadcast
 {
@@ -19,6 +20,7 @@ class RespuestaRecibida implements ShouldBroadcast
     public function __construct(
         public string $nombre,
         public int $cantidad,
+        public int $jugadores,
     ) {
     }
 
