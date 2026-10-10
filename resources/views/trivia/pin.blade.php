@@ -21,6 +21,7 @@
     h1 { font-size: 28px; font-weight: 800; margin: 0; text-align: center; }
     h1 span { color: #d89e00; }
     p { margin: 0; text-align: center; color: #9aa0c8; }
+    a { color: #d89e00; font-weight: 700; }
     input {
       font: inherit; font-size: 24px; letter-spacing: 6px; text-align: center; width: 100%;
       padding: 14px; border-radius: 14px; outline: none;
@@ -41,7 +42,7 @@
   <form method="POST" action="{{ route('trivia.login') }}">
     @csrf
     <h1>Trivia <span>en vivo</span></h1>
-    <p>Pantalla del host: ingresá el PIN</p>
+    <p>Esta pantalla es solo para el host: ingresá el PIN</p>
 
     @if (! $pinConfigurado)
       <p class="error">Falta configurar TRIVIA_HOST_PIN en el .env.</p>
@@ -57,6 +58,8 @@
 
     <input type="password" name="pin" inputmode="numeric" autocomplete="off" placeholder="PIN" required autofocus>
     <button type="submit">Entrar</button>
+    {{-- Para el jugador que llegó acá por error --}}
+    <p>¿Venías a jugar? <a href="{{ route('trivia.jugar') }}">Ir a jugar</a></p>
   </form>
 </body>
 </html>
