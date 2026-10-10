@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
+# Todo va dentro de { ... } con un exit al final: asi bash lee el script completo antes de
+# ejecutarlo. El script se actualiza a si mismo con "git reset", y sin esto bash podria
+# seguir leyendo la version nueva del archivo a mitad de la ejecucion.
+{
 # Script de despliegue: lo ejecuta GitHub Actions en la VM despues de cada push a main.
 set -e
 
 cd /var/www/trivia
 
 echo "==> Modo mantenimiento"
-php artisan down --retry=15 || true
+php artisan down --render="errors::503" --retry=15 || true
 
 echo "==> Bajando la ultima version de main"
 git fetch origin main
@@ -32,3 +36,6 @@ echo "==> Saliendo de mantenimiento"
 php artisan up
 
 echo "==> Deploy terminado"
+
+exit
+}
