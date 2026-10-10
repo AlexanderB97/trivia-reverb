@@ -1,0 +1,27 @@
+name: Deploy a Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # permite ejecutarlo a mano desde GitHub
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Preparar clave SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+      - name: Ejecutar deploy en la VM
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=accept-new \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+              'bash /var/www/trivia/scripts/deploy.sh'
