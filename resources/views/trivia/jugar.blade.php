@@ -207,7 +207,7 @@
   <!-- 1) Ingresar nombre -->
   <form id="pantalla-nombre" class="pantalla">
     <h1>Trivia <span>en vivo</span></h1>
-    <p class="suave centro">Laravel y bases de datos</p>
+    <p class="suave centro">Programación IV · UTN</p>
     <input id="input-nombre" type="text" maxlength="30" placeholder="Tu nombre" autocomplete="off" required>
     <p id="error-nombre" class="mensaje mensaje-error oculto"></p>
     <button id="btn-entrar" class="btn" type="submit">Entrar</button>
