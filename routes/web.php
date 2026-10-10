@@ -16,11 +16,16 @@ Route::name('trivia.')->controller(TriviaController::class)->group(function () {
     // Públicas (jugadores)
     Route::get('/jugar', 'jugar')->name('jugar');
     Route::get('/trivia/estado', 'estado')->name('estado');
-    Route::post('/trivia/unirse', 'unirse')->middleware('throttle:trivia-jugador')->name('unirse');
-    Route::post('/trivia/responder', 'responder')->middleware('throttle:trivia-jugador')->name('responder');
-    Route::post('/trivia/reconectar', 'reconectar')->middleware('throttle:trivia-jugador')->name('reconectar');
-    // "salir" ya es el nombre de la ruta con la que el host cierra su sesión (/host/salir)
-    Route::post('/trivia/salir', 'abandonar')->middleware('throttle:trivia-jugador')->name('abandonar');
+
+    // Las rutas POST de jugadores comparten un límite general por IP (trivia-ip) y además:
+    // anotarse tiene su límite por IP y las que llevan token, un límite por jugador
+    Route::middleware('throttle:trivia-ip')->group(function () {
+        Route::post('/trivia/unirse', 'unirse')->middleware('throttle:trivia-unirse')->name('unirse');
+        Route::post('/trivia/responder', 'responder')->middleware('throttle:trivia-jugador')->name('responder');
+        Route::post('/trivia/reconectar', 'reconectar')->middleware('throttle:trivia-jugador')->name('reconectar');
+        // "salir" ya es el nombre de la ruta con la que el host cierra su sesión (/host/salir)
+        Route::post('/trivia/salir', 'abandonar')->middleware('throttle:trivia-jugador')->name('abandonar');
+    });
 
     // Login del host (sin el middleware, si no nunca se podría entrar)
     Route::post('/host/login', 'login')->middleware('throttle:trivia-pin')->name('login');
