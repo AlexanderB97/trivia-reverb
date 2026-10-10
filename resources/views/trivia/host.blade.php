@@ -157,6 +157,26 @@
     .chips li { background: #2b2f63; padding: 6px 12px; border-radius: 999px; font-weight: 600; animation: entrar .3s; }
     @keyframes entrar { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+    /* --- Lista de jugadores: 🟢 conectado / ⚪ desconectado y botón para quitar --- */
+    .conectados { font-size: 14px; font-weight: 600; color: var(--suave); margin-left: 6px; }
+    .panel-jugadores { margin-top: 16px; }
+    /* Sin animación: la lista se redibuja entera cada vez que alguien se conecta o desconecta */
+    .chips.jugadores li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; animation: none; }
+    .jugador .estado { font-size: 12px; }
+    .jugador.desconectado .nombre { color: var(--suave); }
+    .btn-quitar {
+      font: inherit; font-size: 14px; line-height: 1; width: 24px; height: 24px;
+      border: 0; border-radius: 50%; background: transparent; color: var(--suave); cursor: pointer;
+    }
+    .btn-quitar:hover, .btn-quitar:focus-visible { background: var(--error); color: #fff; }
+    /* Confirmación dentro de la página: "¿Quitar a Ana?  [Sí, quitar] [No]" */
+    .chips.jugadores li.confirmando { background: rgba(255, 92, 116, .15); outline: 1px solid var(--error); padding-right: 10px; }
+    .btn-chip {
+      font: inherit; font-size: 13px; font-weight: 700; padding: 3px 10px;
+      border: 0; border-radius: 999px; cursor: pointer; color: #fff; background: var(--borde);
+    }
+    .btn-chip.peligro { background: var(--rojo); }
+
     .explicacion { color: #d6d8ff; font-size: 17px; line-height: 1.5; margin: 0 0 12px; }
     .ranking { list-style: none; margin: 0; padding: 0; }
     .ranking li {
@@ -250,8 +270,8 @@
           <p class="url-jugar">{{ $urlJugar }}</p>
         </div>
         <div class="sala-jugadores">
-          <h3>Jugadores conectados (<span id="lobby-cantidad">0</span>)</h3>
-          <ul id="lobby" class="chips"></ul>
+          <h3>Jugadores (<span class="js-cantidad">0</span>) <small class="conectados js-conectados"></small></h3>
+          <ul class="chips jugadores js-lista-jugadores"></ul>
         </div>
       </div>
     </div>
@@ -272,7 +292,7 @@
     <div class="paneles">
       <div class="panel">
         <h3>Respuestas</h3>
-        <p class="contador"><span id="contador">0</span> <small>de <span id="total-jugadores">0</span> respondieron</small></p>
+        <p class="contador"><span id="contador">0</span> <small>de <span id="total-jugadores">0</span> conectados respondieron</small></p>
         <ul id="respondieron" class="chips"></ul>
       </div>
       <div class="panel">
@@ -281,6 +301,12 @@
         <ol id="ranking" class="ranking"></ol>
         <p id="ranking-vacio" class="vacio">Todavía no hay puntos.</p>
       </div>
+    </div>
+
+    <!-- La misma lista de la sala de espera, para ver quién sigue conectado durante la partida -->
+    <div class="panel panel-jugadores">
+      <h3>Jugadores (<span class="js-cantidad">0</span>) <small class="conectados js-conectados"></small></h3>
+      <ul class="chips jugadores js-lista-jugadores"></ul>
     </div>
   </section>
 
@@ -324,6 +350,7 @@
       generarLote: "{{ route('trivia.generar-lote') }}",
       revelar: "{{ route('trivia.revelar') }}",
       reiniciar: "{{ route('trivia.reiniciar') }}",
+      quitar: "{{ route('trivia.quitar') }}",
     };
 
     // Atajo para buscar elementos por id
@@ -350,8 +377,10 @@
     let segundosPregunta = 20;
     let prefetch = null;       // promesa del POST /trivia/preparar en curso
     let ultimoRanking = [];
-    let jugadores = [];        // nombres anotados (sala de espera)
-    let cantidadJugadores = 0;
+    let jugadores = [];        // nombres anotados en la partida
+    let conectados = new Set();   // nombres (en minúsculas) presentes en el canal de presencia
+    let presenciaLista = false;   // false hasta que el canal de presencia responde (o si falla)
+    let confirmandoQuitar = null; // jugador que tiene abierto el "¿Quitar a ...?"
     let nombresRespondieron = [];
     let generandoLote = false; // true mientras la IA genera un lote para el banco
     let bancoDisponibles = 0;  // preguntas sin usar en el banco
@@ -532,9 +561,7 @@
       });
 
       nombresRespondieron = [];
-      $('respondieron').innerHTML = '';
-      $('contador').textContent = '0';
-      $('total-jugadores').textContent = cantidadJugadores;
+      dibujarRespondieron();
       $('explicacion').classList.add('oculto');
 
       // Convertimos la hora de cierre del servidor a la hora de esta compu
@@ -547,25 +574,57 @@
       actualizarBotones();
     }
 
-    // Llega una respuesta: si ya respondieron todos, revelamos antes
-    function agregarRespuesta(nombre, cantidad, total) {
-      if (!nombresRespondieron.includes(nombre)) {
-        nombresRespondieron.push(nombre);
-        const li = document.createElement('li');
-        li.textContent = nombre;
-        $('respondieron').appendChild(li);
-      }
-      if (total !== undefined) {
-        cantidadJugadores = total;
-        $('total-jugadores').textContent = total;
-      }
-      const respondidos = cantidad ?? nombresRespondieron.length;
-      $('contador').textContent = respondidos;
+    // Llega una respuesta: si ya respondieron todos los conectados, revelamos antes
+    function agregarRespuesta(nombre) {
+      if (!jugadores.includes(nombre)) jugadores.push(nombre); // por si nos perdimos su JugadorUnido
+      if (!nombresRespondieron.includes(nombre)) nombresRespondieron.push(nombre);
+      dibujarRespondieron();
+      dibujarJugadores();
+      revisarSiRespondieronTodos(800);
+    }
 
-      const todos = cantidadJugadores > 0 && respondidos >= cantidadJugadores;
-      if (fase === 'pregunta' && todos) {
-        mostrarInfo('¡Respondieron todos!');
-        programar(revelar, 800);
+    // Chips de "quiénes respondieron" y el contador "3 de 5 conectados respondieron"
+    function dibujarRespondieron() {
+      $('respondieron').innerHTML = '';
+      nombresRespondieron.forEach((nombre) => {
+        const li = document.createElement('li');
+        li.textContent = nombre; // textContent evita inyectar HTML
+        $('respondieron').appendChild(li);
+      });
+      actualizarContador();
+    }
+
+    // El total son los conectados, más los que respondieron y después se desconectaron
+    function actualizarContador() {
+      const esperados = jugadores.filter((n) => estaConectado(n) || nombresRespondieron.includes(n));
+      $('contador').textContent = nombresRespondieron.length;
+      $('total-jugadores').textContent = esperados.length;
+    }
+
+    // "Todos" son los jugadores CONECTADOS: a uno que cerró la pestaña o se quedó sin
+    // señal no lo esperamos (igual puede responder si vuelve antes de que cierre).
+    function todosRespondieron() {
+      const enLinea = jugadores.filter(estaConectado);
+      return enLinea.length > 0 && enLinea.every((n) => nombresRespondieron.includes(n));
+    }
+
+    // Si ya respondieron todos los conectados, programa el revelado anticipado.
+    // Se llama cuando llega una respuesta y cuando alguien se desconecta o es quitado.
+    function revisarSiRespondieronTodos(ms) {
+      if (fase !== 'pregunta' || !todosRespondieron()) return;
+      mostrarInfo('¡Respondieron todos los conectados!');
+      programar(revelarSiSiguenTodos, ms);
+    }
+
+    // Vuelve a chequear justo antes de revelar: si en el medio se conectó alguien que
+    // todavía no respondió (por ej. recargó la página), se sigue esperando hasta el cierre.
+    function revelarSiSiguenTodos() {
+      if (fase !== 'pregunta') return;
+      if (todosRespondieron()) {
+        revelar();
+      } else {
+        mostrarInfo('');
+        programar(revelar, deadlineLocal + 700 - Date.now());
       }
     }
 
@@ -682,24 +741,153 @@
     // SALA DE ESPERA
     // ================================================================
 
-    function agregarJugador(nombre, cantidad) {
-      if (!jugadores.includes(nombre)) {
-        jugadores.push(nombre);
-        const li = document.createElement('li');
-        li.textContent = nombre;
-        $('lobby').appendChild(li);
-      }
-      cantidadJugadores = cantidad ?? jugadores.length;
-      $('lobby-cantidad').textContent = cantidadJugadores;
-      $('total-jugadores').textContent = cantidadJugadores;
+    function agregarJugador(nombre) {
+      if (!jugadores.includes(nombre)) jugadores.push(nombre);
+      dibujarJugadores();
     }
 
     function limpiarSala() {
       jugadores = [];
-      cantidadJugadores = 0;
-      $('lobby').innerHTML = '';
-      $('lobby-cantidad').textContent = '0';
+      confirmandoQuitar = null;
+      dibujarJugadores();
     }
+
+    // Un jugador salió o fue quitado: desaparece de la sala y de "quiénes respondieron"
+    function sacarJugador(nombre) {
+      jugadores = jugadores.filter((n) => n !== nombre);
+      nombresRespondieron = nombresRespondieron.filter((n) => n !== nombre);
+      if (confirmandoQuitar === nombre) confirmandoQuitar = null;
+      dibujarRespondieron();
+      dibujarJugadores();
+      // Si era el único que faltaba responder, ya están todos
+      revisarSiRespondieronTodos(800);
+    }
+
+    // ================================================================
+    // PRESENCIA: quién está conectado ahora (canal de presencia de Reverb)
+    // ================================================================
+
+    // Mientras el canal de presencia no responde (o si falla) no sabemos quién está
+    // conectado: en ese caso contamos a todos, como antes de que existiera la presencia.
+    function estaConectado(nombre) {
+      return !presenciaLista || conectados.has(nombre.toLowerCase());
+    }
+
+    // Dibuja la lista de jugadores en la sala de espera y en la pantalla de juego
+    function dibujarJugadores() {
+      const enLinea = jugadores.filter(estaConectado).length;
+
+      document.querySelectorAll('.js-cantidad').forEach((el) => { el.textContent = jugadores.length; });
+      document.querySelectorAll('.js-conectados').forEach((el) => {
+        el.textContent = presenciaLista ? '🟢 ' + enLinea + (enLinea === 1 ? ' conectado' : ' conectados') : '';
+      });
+      document.querySelectorAll('.js-lista-jugadores').forEach((lista) => {
+        lista.innerHTML = '';
+        jugadores.forEach((nombre) => lista.appendChild(crearChipJugador(nombre)));
+      });
+      actualizarContador();
+    }
+
+    function crearBoton(clase, texto, alTocar) {
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = clase;
+      boton.textContent = texto;
+      boton.addEventListener('click', alTocar);
+      return boton;
+    }
+
+    // Un jugador de la lista: "🟢 Ana ✕" o, al tocar la ✕, "¿Quitar a Ana? [Sí, quitar] [No]"
+    function crearChipJugador(nombre) {
+      const li = document.createElement('li');
+      const conectado = estaConectado(nombre);
+      li.className = 'jugador' + (conectado ? '' : ' desconectado');
+
+      const texto = document.createElement('span');
+      texto.className = 'nombre';
+
+      if (confirmandoQuitar === nombre) {
+        // Confirmación dentro de la página (sin el confirm() del navegador)
+        li.classList.add('confirmando');
+        texto.textContent = '¿Quitar a ' + nombre + '?'; // textContent evita inyectar HTML
+        li.appendChild(texto);
+        li.appendChild(crearBoton('btn-chip peligro', 'Sí, quitar', () => quitarJugador(nombre)));
+        li.appendChild(crearBoton('btn-chip', 'No', () => {
+          confirmandoQuitar = null;
+          dibujarJugadores();
+        }));
+        return li;
+      }
+
+      if (presenciaLista) {
+        const estado = document.createElement('span');
+        estado.className = 'estado';
+        estado.textContent = conectado ? '🟢' : '⚪';
+        estado.title = conectado ? 'Conectado' : 'Desconectado';
+        li.appendChild(estado);
+      }
+
+      texto.textContent = nombre;
+      li.appendChild(texto);
+
+      const quitar = crearBoton('btn-quitar', '✕', () => {
+        confirmandoQuitar = nombre;
+        dibujarJugadores();
+      });
+      quitar.title = 'Quitar a ' + nombre + ' de la partida';
+      quitar.setAttribute('aria-label', quitar.title);
+      li.appendChild(quitar);
+      return li;
+    }
+
+    // El host quita a un jugador: el servidor lo borra y avisa a todos con JugadorSalio
+    async function quitarJugador(nombre) {
+      confirmandoQuitar = null;
+      mostrarError('');
+      try {
+        await post(RUTAS.quitar, { nombre: nombre });
+        sacarJugador(nombre);
+      } catch (e) {
+        if (e.status === 422) {
+          sacarJugador(nombre); // ya no estaba (por ejemplo, justo salió solo)
+        } else {
+          mostrarError(e.message);
+          dibujarJugadores();
+        }
+      }
+    }
+
+    // Echo.join() entra al canal de presencia (el servidor nos autoriza por la sesión con PIN):
+    //  - here:    lista completa de los que ya estaban, al entrar (y al reconectar)
+    //  - joining: alguien se conectó
+    //  - leaving: alguien cerró la pestaña o se quedó sin conexión
+    // El host también es un miembro del canal (host: true): no lo contamos como jugador.
+    const claveDe = (miembro) => String(miembro.nombre).toLowerCase();
+
+    window.Echo.join('trivia.presencia')
+      .here((miembros) => {
+        conectados = new Set(miembros.filter((m) => !m.host).map(claveDe));
+        presenciaLista = true;
+        dibujarJugadores();
+        revisarSiRespondieronTodos(3000);
+      })
+      .joining((miembro) => {
+        if (miembro.host) return;
+        conectados.add(claveDe(miembro));
+        dibujarJugadores();
+      })
+      .leaving((miembro) => {
+        if (miembro.host) return;
+        conectados.delete(claveDe(miembro));
+        dibujarJugadores();
+        // Damos 3 s antes de revelar: si solo recargó la página, vuelve a aparecer enseguida
+        revisarSiRespondieronTodos(3000);
+      })
+      .error(() => {
+        // No se pudo entrar al canal: seguimos sin datos de conexión (se cuenta a todos)
+        presenciaLista = false;
+        dibujarJugadores();
+      });
 
     // Vuelve a la pantalla de configuración (después de reiniciar o terminar)
     function volverAConfig() {
@@ -814,11 +1002,21 @@
     // ================================================================
 
     window.Echo.channel('trivia')
-      .listen('.JugadorUnido', (e) => agregarJugador(e.nombre, e.cantidad))
+      .listen('.JugadorUnido', (e) => agregarJugador(e.nombre))
+      .listen('.JugadorSalio', (e) => {
+        sacarJugador(e.nombre);
+        // El ranking llega ya sin ese jugador (y con los puestos recalculados)
+        ultimoRanking = e.ranking;
+        if (fase === 'fin') {
+          mostrarPodio();
+        } else {
+          dibujarRanking($('ranking'), e.ranking, fase === 'resultado');
+        }
+      })
       .listen('.PreguntaLanzada', (e) => {
         if (fase === 'lanzando') mostrarPregunta(e);
       })
-      .listen('.RespuestaRecibida', (e) => agregarRespuesta(e.nombre, e.cantidad, e.jugadores))
+      .listen('.RespuestaRecibida', (e) => agregarRespuesta(e.nombre))
       .listen('.ResultadoRevelado', (e) => {
         if (fase === 'revelando' || fase === 'pregunta') mostrarResultado(e);
       })
