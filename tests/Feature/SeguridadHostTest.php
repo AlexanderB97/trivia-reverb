@@ -119,6 +119,7 @@ class SeguridadHostTest extends TriviaTestCase
             'generar lote' => ['/trivia/generar-lote'],
             'revelar' => ['/trivia/revelar'],
             'reiniciar' => ['/trivia/reiniciar'],
+            'quitar' => ['/trivia/quitar'],
         ];
     }
 }
