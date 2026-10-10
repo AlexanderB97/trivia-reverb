@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\JugadorSalio;
 use App\Events\JugadorUnido;
 use App\Events\PartidaReiniciada;
 use App\Events\PreguntaLanzada;
@@ -10,6 +11,7 @@ use App\Events\ResultadoRevelado;
 use App\Http\Middleware\EnsureTriviaHost;
 use App\Models\Pregunta;
 use App\Services\GeneradorPreguntas;
+use App\Services\Jugadores;
 use chillerlan\QRCode\Common\EccLevel;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
@@ -48,6 +50,9 @@ class TriviaController extends Controller
 
     /** Margen (ms) para respuestas que salieron a tiempo pero tardaron en llegar por la red. */
     private const GRACIA_MS = 500;
+
+    /** Mensaje para el jugador cuyo nombre o token no vale en la partida actual. */
+    private const NO_ANOTADO = 'No estás anotado en esta partida. Volvé a ingresar tu nombre.';
 
     /** Preguntas que pide el botón "Generar 10 más". */
     private const LOTE_HOST = 10;
@@ -284,7 +289,7 @@ class TriviaController extends Controller
                 $jugador = Cache::get('trivia.jugadores', [])[$clave] ?? null;
 
                 if (! $jugador || ! hash_equals($jugador['token'], $token)) {
-                    return ['error' => 'No estás anotado en esta partida. Volvé a ingresar tu nombre.', 'reingresar' => true];
+                    return ['error' => self::NO_ANOTADO, 'reingresar' => true];
                 }
 
                 $nombre = $jugador['nombre'];
@@ -340,6 +345,66 @@ class TriviaController extends Controller
 
         // A propósito NO devolvemos si acertó: eso se ve recién al revelar
         return response()->json(['ok' => true, 'cantidad' => $resultado['cantidad']]);
+    }
+
+    /**
+     * POST /trivia/reconectar {nombre, token}
+     * El navegador guardó el nombre y el token: al volver a abrir /jugar pregunta si
+     * siguen valiendo en la partida actual. Si valen, el jugador entra directo (con sus
+     * puntos); si no (por ejemplo, se reinició la partida), tiene que anotarse de nuevo.
+     * A diferencia de /trivia/unirse, nunca anota a nadie.
+     */
+    public function reconectar(Request $request, Jugadores $jugadores): JsonResponse
+    {
+        $datos = $request->validate([
+            'nombre' => ['required', 'string', 'max:30'],
+            'token' => ['required', 'string', 'max:64'],
+        ]);
+
+        $jugador = $jugadores->conToken($datos['nombre'], $datos['token']);
+
+        if (! $jugador) {
+            return $this->noAnotado();
+        }
+
+        // Con la pregunta abierta, los puntos son los de antes de esa ronda (como en estado())
+        $fila = collect($this->ranking(ocultarRonda: (bool) Cache::get('trivia.abierta', false)))
+            ->firstWhere('nombre', $jugador['nombre']);
+
+        return response()->json([
+            'nombre' => $jugador['nombre'],
+            'token' => $jugador['token'],
+            'puntos' => (int) ($fila['puntos'] ?? 0),
+        ]);
+    }
+
+    /**
+     * POST /trivia/salir {nombre, token}
+     * Botón "Salir de la partida": borra al jugador (su nombre queda libre y sus puntos
+     * desaparecen del ranking) y avisa con el evento JugadorSalio.
+     */
+    public function abandonar(Request $request, Jugadores $jugadores): JsonResponse
+    {
+        $datos = $request->validate([
+            'nombre' => ['required', 'string', 'max:30'],
+            'token' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            $sacado = Cache::lock(self::LOCK, 10)->block(5, function () use ($datos, $jugadores) {
+                $jugador = $jugadores->conToken($datos['nombre'], $datos['token']);
+
+                return $jugador ? $this->sacarJugador($jugador['nombre']) : null;
+            });
+        } catch (LockTimeoutException) {
+            return $this->ocupado();
+        }
+
+        if (! $sacado) {
+            return $this->noAnotado();
+        }
+
+        return $this->despedir($sacado, quitado: false);
     }
 
     // ------------------------------------------------------------------
@@ -595,9 +660,87 @@ class TriviaController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * POST /trivia/quitar {nombre}
+     * El host saca a un jugador de la partida (por ejemplo, uno que quedó "huérfano"
+     * o un nombre inapropiado). Igual que si el jugador saliera, pero sin pedir su token.
+     */
+    public function quitar(Request $request): JsonResponse
+    {
+        $datos = $request->validate(['nombre' => ['required', 'string', 'max:30']]);
+
+        try {
+            $sacado = Cache::lock(self::LOCK, 10)->block(5, fn () => $this->sacarJugador($datos['nombre']));
+        } catch (LockTimeoutException) {
+            return $this->ocupado();
+        }
+
+        if (! $sacado) {
+            return response()->json(['message' => 'Ese jugador ya no está en la partida.'], 422);
+        }
+
+        return $this->despedir($sacado, quitado: true);
+    }
+
     // ------------------------------------------------------------------
     // Ayudantes
     // ------------------------------------------------------------------
+
+    /**
+     * Borra a un jugador de la partida (se llama dentro del lock): libera su nombre y
+     * saca sus puntos y su respuesta de la ronda. Devuelve null si no estaba anotado.
+     *
+     * @return array{nombre: string, cantidad: int}|null "cantidad" son los que quedan
+     */
+    private function sacarJugador(string $nombre): ?array
+    {
+        $clave = mb_strtolower(trim($nombre));
+        $jugadores = Cache::get(Jugadores::CLAVE, []);
+
+        if (! isset($jugadores[$clave])) {
+            return null;
+        }
+
+        $nombre = $jugadores[$clave]['nombre'];
+        unset($jugadores[$clave]);
+        Cache::forever(Jugadores::CLAVE, $jugadores);
+
+        foreach (['trivia.puntajes', 'trivia.respondieron'] as $claveCache) {
+            $datos = Cache::get($claveCache, []);
+            unset($datos[$nombre]);
+            Cache::forever($claveCache, $datos);
+        }
+
+        return ['nombre' => $nombre, 'cantidad' => count($jugadores)];
+    }
+
+    /**
+     * Avisa por JugadorSalio que el jugador ya no está (salió o lo quitó el host).
+     *
+     * @param  array{nombre: string, cantidad: int}  $sacado
+     */
+    private function despedir(array $sacado, bool $quitado): JsonResponse
+    {
+        $evento = new JugadorSalio(
+            $sacado['nombre'],
+            $sacado['cantidad'],
+            $quitado,
+            // Con la pregunta abierta, sin los puntos de la ronda (no delata quién acertó)
+            $this->ranking(ocultarRonda: (bool) Cache::get('trivia.abierta', false)),
+        );
+
+        if ($error = $this->transmitir($evento)) {
+            return $error;
+        }
+
+        return response()->json(['ok' => true, 'nombre' => $sacado['nombre'], 'cantidad' => $sacado['cantidad']]);
+    }
+
+    /** Respuesta para quien manda un nombre o token que no vale en la partida actual. */
+    private function noAnotado(): JsonResponse
+    {
+        return response()->json(['message' => self::NO_ANOTADO, 'reingresar' => true], 422);
+    }
 
     /**
      * Puntos estilo Kahoot: correcta al instante = 1000, justo al final = 500.
