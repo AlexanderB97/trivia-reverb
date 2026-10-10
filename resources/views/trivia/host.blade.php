@@ -207,6 +207,16 @@
     .esc-3 .bloque { height: 100px; background: linear-gradient(#c98a4b, #7a4f22); }
     .centro { text-align: center; }
 
+    /* Aviso flotante (sin conexión con el servidor), igual al de /jugar */
+    .aviso-flotante {
+      position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 40;
+      max-width: 608px; margin: 0 auto;
+      padding: 14px 16px; border-radius: 14px;
+      background: var(--panel); border: 2px solid var(--amarillo); color: var(--texto);
+      font-weight: 600; line-height: 1.35; text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+    }
+
     @media (max-width: 760px) {
       .opciones, .paneles, .config { grid-template-columns: 1fr; }
       .acciones { width: 100%; }
@@ -327,6 +337,11 @@
   <img class="qr" src="{{ $qrJugar }}" alt="QR para unirse">
   <span>Unirse</span>
 </button>
+<!-- Aviso flotante para cuando no hay conexión con el servidor -->
+<div id="aviso" class="aviso-flotante oculto" role="status" aria-live="polite">
+  <span id="aviso-texto"></span>
+</div>
+
 <div id="qr-modal" class="qr-modal oculto" role="dialog" aria-label="QR para unirse">
   <div class="qr-grande">
     <p class="qr-titulo">Escaneá para jugar</p>
@@ -392,7 +407,7 @@
     // POST con fetch: token CSRF + pedimos JSON. Si hay error, lanza una
     // excepción con el mensaje del servidor y el código HTTP en e.status.
     async function post(url, datos = {}) {
-      const respuesta = await fetch(url, {
+      const respuesta = await pedir(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -404,6 +419,30 @@
       const json = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok) throw errorDe(respuesta.status, json.message);
       return json;
+    }
+
+    // fetch() que avisa si no hay conexión. Cuando el pedido ni siquiera llega al servidor
+    // (sin internet, servidor apagado) fetch lanza una excepción: mostramos el aviso
+    // flotante y lanzamos el error con ese texto en vez del "Failed to fetch" del navegador.
+    // No lleva .status, igual que antes: el juego reacciona como ante cualquier falla de red.
+    const SIN_CONEXION = 'No hay conexión con el servidor. Revisá tu internet o probá en un rato.';
+    let timerAviso = null;
+
+    async function pedir(url, opciones) {
+      try {
+        return await fetch(url, opciones);
+      } catch (e) {
+        mostrarAviso(SIN_CONEXION);
+        throw new Error(SIN_CONEXION);
+      }
+    }
+
+    // Aviso flotante abajo (el mismo de /jugar): se va solo a los 8 segundos
+    function mostrarAviso(texto) {
+      $('aviso-texto').textContent = texto;
+      $('aviso').classList.remove('oculto');
+      clearTimeout(timerAviso);
+      timerAviso = setTimeout(() => $('aviso').classList.add('oculto'), 8000);
     }
 
     // Textos amigables para los problemas del servidor que no son del juego. Sin esto el
@@ -428,7 +467,7 @@
 
     // GET /trivia/estado. Si el servidor responde con error, lanza el mismo tipo de error que post()
     async function pedirEstado() {
-      const respuesta = await fetch(RUTAS.estado, { headers: { 'Accept': 'application/json' } });
+      const respuesta = await pedir(RUTAS.estado, { headers: { 'Accept': 'application/json' } });
       const json = await respuesta.json().catch(() => ({}));
       if (!respuesta.ok) throw errorDe(respuesta.status, json.message);
       return json;

@@ -348,7 +348,7 @@
 
     // POST con fetch (token CSRF + JSON). Devuelve { ok, status, json }.
     async function post(url, datos) {
-      const respuesta = await fetch(url, {
+      const respuesta = await pedir(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -365,10 +365,23 @@
       return { ok: respuesta.ok, status: respuesta.status, json };
     }
 
+    // fetch() que avisa si no hay conexión. Cuando el pedido ni siquiera llega al servidor
+    // (sin internet, servidor apagado) fetch lanza una excepción: mostramos el aviso
+    // flotante y la volvemos a lanzar, así cada pantalla sigue reaccionando como antes.
+    async function pedir(url, opciones) {
+      try {
+        return await fetch(url, opciones);
+      } catch (e) {
+        mostrarAviso(SIN_CONEXION, false);
+        throw e;
+      }
+    }
+
     // ================================================================
-    // AVISOS DE PROBLEMAS DEL SERVIDOR (419, 429 y 503)
+    // AVISOS DE PROBLEMAS DEL SERVIDOR (419, 429 y 503) Y DE CONEXIÓN
     // Sin esto el jugador vería textos como "CSRF token mismatch." o nada.
     // ================================================================
+    const SIN_CONEXION = 'No hay conexión con el servidor. Revisá tu internet o probá en un rato.';
     const AVISOS = {
       419: 'Tu sesión venció por estar mucho rato abierta. Recargá la página para seguir: no perdés tu nombre ni tus puntos.',
       429: 'Demasiados intentos seguidos. Esperá un minuto y probá de nuevo.',
@@ -390,15 +403,20 @@
       const texto = textoDeAviso(status, mensajeServidor);
       if (!texto) return null;
 
+      mostrarAviso(texto, status === 419);
+      return texto;
+    }
+
+    // Aviso flotante. Con "fijo" queda en pantalla con el botón "Recargar"; si no, se va solo.
+    function mostrarAviso(texto, fijo) {
       $('aviso-texto').textContent = texto;
-      $('aviso-recargar').classList.toggle('oculto', status !== 419);
+      $('aviso-recargar').classList.toggle('oculto', !fijo);
       $('aviso').classList.remove('oculto');
 
       clearTimeout(timerAviso);
-      if (status !== 419) {
+      if (!fijo) {
         timerAviso = setTimeout(() => $('aviso').classList.add('oculto'), 8000);
       }
-      return texto;
     }
 
     $('aviso-recargar').addEventListener('click', () => location.reload());
@@ -849,7 +867,7 @@
     // Pide al servidor el estado actual (para sumarse tarde o tras recargar)
     async function cargarEstado() {
       try {
-        const r = await fetch(RUTAS.estado + '?nombre=' + encodeURIComponent(nombre), {
+        const r = await pedir(RUTAS.estado + '?nombre=' + encodeURIComponent(nombre), {
           headers: { 'Accept': 'application/json' },
         });
         const estado = await r.json().catch(() => ({}));
