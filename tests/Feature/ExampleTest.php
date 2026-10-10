@@ -2,18 +2,30 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * Páginas públicas: que la app levante y las pantallas principales respondan.
+ */
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * La raíz no tiene pantalla propia: redirige al emisor.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_la_raiz_redirige_al_emisor(): void
     {
-        $response = $this->get('/');
+        $this->get('/')->assertRedirect('/emisor');
+    }
 
-        $response->assertStatus(200);
+    /**
+     * La pantalla de los jugadores es pública y carga sin PIN.
+     */
+    public function test_la_pantalla_de_jugar_es_publica(): void
+    {
+        $this->withoutVite();
+
+        $this->get('/jugar')
+            ->assertOk()
+            ->assertViewIs('trivia.jugar');
     }
 }

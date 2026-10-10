@@ -32,5 +32,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Trivia: PIN fijo para los tests y una API key falsa (nunca se llama a Gemini de verdad) -->
+        <env name="TRIVIA_HOST_PIN" value="123456"/>
+        <env name="GEMINI_API_KEY" value="fake"/>
     </php>
 </phpunit>

@@ -1,14 +1,60 @@
-name: Deploy a Azure
+name: CI/CD
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:   # permite ejecutarlo a mano desde GitHub
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  # ---------- CI: correr los tests ----------
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    steps:
+      - name: Bajar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, curl, zip, bcmath, intl, sqlite3, pdo_sqlite
+          coverage: none
+
+      - name: Instalar Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Dependencias de PHP
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Preparar .env de testing
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Compilar el frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Correr los tests
+        run: php artisan test
+
+  # ---------- CD: desplegar (solo si los tests pasaron) ----------
+  deploy:
+    name: Deploy a Azure
+    needs: tests
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency: deploy-produccion
 
     steps:
       - name: Preparar clave SSH

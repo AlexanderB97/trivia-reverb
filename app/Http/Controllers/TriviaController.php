@@ -54,6 +54,7 @@ class TriviaController extends Controller
 
     /** Segundos máximos de PHP en las rutas que esperan a la IA (en Windows cuenta tiempo real). */
     private const LIMITE_IA = 60;
+
     private const LIMITE_LOTE = 120;
 
     /** Claves que se borran al reiniciar (el banco de preguntas en la base NO se toca). */
@@ -105,12 +106,12 @@ class TriviaController extends Controller
         }
 
         if (! in_array($request->getHost(), ['localhost', '127.0.0.1', '::1', '[::1]'], true)) {
-            return $request->getSchemeAndHttpHost() . '/jugar';
+            return $request->getSchemeAndHttpHost().'/jugar';
         }
 
         $host = (string) config('broadcasting.connections.reverb.options.host') ?: $request->getHost();
 
-        return 'http://' . $host . ':' . $request->getPort() . '/jugar';
+        return 'http://'.$host.':'.$request->getPort().'/jugar';
     }
 
     public function jugar()
@@ -192,7 +193,9 @@ class TriviaController extends Controller
             'jugadores' => $this->nombresJugadores(),
             // Si el jugador ya respondió esta ronda, le devolvemos qué eligió
             'miOpcion' => $nombre !== '' ? ($respondieron[$nombre]['opcion'] ?? null) : null,
-            'ranking' => $this->ranking(),
+            // Con la pregunta abierta van los puntos de ANTES de esta ronda: si no, mirando
+            // quién sumó se podría deducir la respuesta correcta antes de revelar
+            'ranking' => $this->ranking(ocultarRonda: $abierta),
             // Solo la cantidad (para "Banco: N preguntas disponibles" en el host), nunca las preguntas
             'banco' => Pregunta::disponibles()->count(),
         ]);
@@ -585,7 +588,7 @@ class TriviaController extends Controller
         }
 
         // Los jugadores vuelven a "Esperando pregunta..." y se vuelven a anotar solos
-        if ($error = $this->transmitir(new PartidaReiniciada())) {
+        if ($error = $this->transmitir(new PartidaReiniciada)) {
             return $error;
         }
 
@@ -680,18 +683,24 @@ class TriviaController extends Controller
      * "ganados" son los puntos que sumó en la última pregunta.
      * "puesto" respeta los empates: mismo puntaje = mismo puesto (1, 2, 2, 4).
      *
+     * Con $ocultarRonda (pregunta todavía abierta) devuelve el ranking como estaba ANTES
+     * de la pregunta actual: sin los puntos de esta ronda y con "ganados" en 0. Los puntos
+     * de la ronda se ven recién al revelar; antes delatarían quién acertó.
+     *
      * @return array<int, array{nombre: string, puntos: int, ganados: int, puesto: int}>
      */
-    private function ranking(): array
+    private function ranking(bool $ocultarRonda = false): array
     {
         $respondieron = Cache::get('trivia.respondieron', []);
         $ranking = [];
 
         foreach (Cache::get('trivia.puntajes', []) as $nombre => $puntos) {
+            $ganados = (int) ($respondieron[$nombre]['puntos'] ?? 0);
+
             $ranking[] = [
                 'nombre' => (string) $nombre,
-                'puntos' => (int) $puntos,
-                'ganados' => (int) ($respondieron[$nombre]['puntos'] ?? 0),
+                'puntos' => $ocultarRonda ? (int) $puntos - $ganados : (int) $puntos,
+                'ganados' => $ocultarRonda ? 0 : $ganados,
             ];
         }
 
