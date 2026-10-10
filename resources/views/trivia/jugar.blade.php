@@ -41,8 +41,11 @@
     .barra strong { color: var(--texto); }
     .link {
       font: inherit; font-size: 14px; background: none; border: 0; padding: 0;
-      color: var(--suave); text-decoration: underline; cursor: pointer;
+      color: var(--suave); text-decoration: underline; cursor: pointer; text-align: right;
     }
+    .link:disabled { opacity: .5; }
+    /* "Salir de la partida" pide confirmar con un segundo toque */
+    .link.confirmar { color: var(--error); font-weight: 800; }
 
     .pantalla { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 16px; }
     .oculto { display: none !important; }
@@ -200,8 +203,8 @@
 <body>
 <div class="wrap">
   <div id="barra" class="barra oculto">
-    <span>Jugando como <strong id="mi-nombre"></strong></span>
-    <button id="btn-cambiar" class="link">Cambiar nombre</button>
+    <span>Jugando como <strong id="mi-nombre"></strong> · <strong id="mis-puntos">0</strong> pts</span>
+    <button id="btn-salir" class="link" type="button">Salir de la partida</button>
   </div>
 
   <!-- 1) Ingresar nombre -->
@@ -269,13 +272,37 @@
       estado: "{{ route('trivia.estado') }}",
       unirse: "{{ route('trivia.unirse') }}",
       responder: "{{ route('trivia.responder') }}",
+      reconectar: "{{ route('trivia.reconectar') }}",
+      salir: "{{ route('trivia.abandonar') }}",
     };
     const $ = (id) => document.getElementById(id);
 
+    // ================================================================
+    // DATOS GUARDADOS EN EL NAVEGADOR (localStorage)
+    // A diferencia de sessionStorage, localStorage sobrevive a cerrar la pestaña:
+    // así el jugador puede volver a entrar sin escribir el nombre de nuevo.
+    // Va todo con try/catch porque algunos navegadores lo bloquean (modo privado,
+    // cookies deshabilitadas): en ese caso se juega igual, solo que sin "recordar".
+    // ================================================================
+    const guardado = {
+      leer(clave) {
+        try { return localStorage.getItem(clave) || ''; } catch (e) { return ''; }
+      },
+      escribir(clave, valor) {
+        try { localStorage.setItem(clave, valor); } catch (e) { /* se sigue sin guardar */ }
+      },
+      borrar(clave) {
+        try { localStorage.removeItem(clave); } catch (e) { /* nada que borrar */ }
+      },
+    };
+
     // Estado del jugador en el navegador.
     // El token lo da el servidor al anotarse: prueba que este nombre es "mío".
-    let nombre = sessionStorage.getItem('trivia.nombre') || '';
-    let token = sessionStorage.getItem('trivia.token') || '';
+    let nombre = guardado.leer('trivia.nombre');
+    let token = guardado.leer('trivia.token');
+
+    // Con esto se autoriza el canal de presencia (lo llama resources/js/echo.js al suscribirse)
+    window.triviaCredenciales = () => (token ? { nombre: nombre, token: token } : {});
     let opcionesActuales = [];  // textos de las 4 opciones de la pregunta actual
     let miEleccion = null;      // índice (0-3) que tocó el jugador, o null si no respondió
     let numeroActual = null;    // número de la pregunta en pantalla
@@ -333,12 +360,7 @@
           pedirNombre(r.json.message || 'No se pudo entrar (error ' + r.status + ').');
           return false;
         }
-        // Guardamos el nombre tal como lo registró el servidor y el token
-        nombre = r.json.nombre;
-        token = r.json.token;
-        sessionStorage.setItem('trivia.nombre', nombre);
-        sessionStorage.setItem('trivia.token', token);
-        $('mi-nombre').textContent = nombre;
+        recordarJugador(r.json.nombre, r.json.token);
         return true;
       } catch (e) {
         pedirNombre('No hay conexión con el servidor. Probá de nuevo.');
@@ -346,6 +368,126 @@
       } finally {
         $('btn-entrar').disabled = false;
       }
+    }
+
+    // Guarda el nombre (tal como lo registró el servidor) y el token, y avisa que estamos conectados
+    function recordarJugador(nuevoNombre, nuevoToken) {
+      nombre = nuevoNombre;
+      token = nuevoToken;
+      guardado.escribir('trivia.nombre', nombre);
+      guardado.escribir('trivia.token', token);
+      $('mi-nombre').textContent = nombre;
+      conectarPresencia();
+    }
+
+    // Borra todo lo del jugador en este navegador (salió, lo quitaron o el token ya no vale)
+    function olvidarJugador() {
+      guardado.borrar('trivia.nombre');
+      guardado.borrar('trivia.token');
+      nombre = '';
+      token = '';
+      numeroActual = null;
+      mostrarMisPuntos(0);
+      window.Echo.leave('trivia.presencia');
+    }
+
+    function mostrarMisPuntos(puntos) {
+      $('mis-puntos').textContent = puntos;
+    }
+
+    // Busca mis puntos en un ranking que mandó el servidor
+    function mostrarMisPuntosDe(ranking) {
+      const yo = nombre.toLowerCase();
+      const mio = (ranking || []).find((j) => String(j.nombre).toLowerCase() === yo);
+      if (mio) mostrarMisPuntos(mio.puntos);
+    }
+
+    // ================================================================
+    // PRESENCIA: entrar al canal para que el host nos vea "conectados"
+    // ================================================================
+
+    // Echo.join() pide permiso a /broadcasting/auth mandando nombre y token (ver echo.js).
+    // Mientras esta pestaña esté abierta y con conexión, el host nos ve en verde; al
+    // cerrarla o perder la señal, Reverb avisa solo y pasamos a "desconectado".
+    function conectarPresencia() {
+      window.Echo.leave('trivia.presencia'); // por si ya estábamos (con otro nombre o token)
+      window.Echo.join('trivia.presencia');
+    }
+
+    // ================================================================
+    // RECONEXIÓN: volver a entrar con lo guardado, sin escribir el nombre
+    // ================================================================
+
+    // Pregunta al servidor si el nombre y el token guardados siguen valiendo en la partida actual
+    async function reconectar() {
+      try {
+        const r = await post(RUTAS.reconectar, { nombre: nombre, token: token });
+
+        if (r.ok) {
+          recordarJugador(r.json.nombre, r.json.token);
+          mostrarMisPuntos(r.json.puntos);
+          await cargarEstado();
+        } else if (r.status === 422) {
+          // Ya no valen (por ejemplo, se reinició la partida): se borran y se pide el nombre
+          olvidarJugador();
+          pedirNombre('');
+        } else {
+          // Servidor ocupado o demasiados pedidos: no borramos nada, puede reintentar con "Entrar"
+          pedirNombre('No se pudo volver a entrar (error ' + r.status + '). Tocá "Entrar" para reintentar.');
+        }
+      } catch (e) {
+        pedirNombre('No hay conexión con el servidor. Tocá "Entrar" para reintentar.');
+      }
+    }
+
+    // ================================================================
+    // SALIR DE LA PARTIDA
+    // ================================================================
+
+    let confirmarSalida = null; // timer del "tocá de nuevo para confirmar"
+
+    function restaurarBotonSalir() {
+      clearTimeout(confirmarSalida);
+      confirmarSalida = null;
+      $('btn-salir').textContent = 'Salir de la partida';
+      $('btn-salir').classList.remove('confirmar');
+      $('btn-salir').disabled = false;
+    }
+
+    // Primer toque: pide confirmación (4 s). Segundo toque: sale de verdad.
+    $('btn-salir').addEventListener('click', async () => {
+      if (!confirmarSalida) {
+        $('btn-salir').textContent = '¿Salir y perder tus puntos? Tocá de nuevo';
+        $('btn-salir').classList.add('confirmar');
+        confirmarSalida = setTimeout(restaurarBotonSalir, 4000);
+        return;
+      }
+
+      clearTimeout(confirmarSalida);
+      $('btn-salir').disabled = true;
+
+      try {
+        // El servidor borra al jugador: el nombre queda libre y sus puntos desaparecen
+        const r = await post(RUTAS.salir, { nombre: nombre, token: token });
+
+        // Con 422 el servidor ya no nos conocía: igual limpiamos este navegador
+        if (r.ok || r.status === 422) {
+          restaurarBotonSalir();
+          olvidarJugador();
+          pedirNombre('');
+        } else {
+          avisarQueNoSalio('No se pudo salir (error ' + r.status + '). Tocá para reintentar');
+        }
+      } catch (e) {
+        avisarQueNoSalio('Sin conexión: no se pudo salir. Tocá para reintentar');
+      }
+    });
+
+    // Si falla el pedido, el aviso va en el mismo botón: tocarlo de nuevo reintenta
+    function avisarQueNoSalio(texto) {
+      $('btn-salir').disabled = false;
+      $('btn-salir').textContent = texto;
+      confirmarSalida = setTimeout(restaurarBotonSalir, 4000);
     }
 
     // ================================================================
@@ -428,8 +570,12 @@
         mostrarMensaje(r.json.message || 'Error ' + r.status, 'error');
 
         if (r.json.reingresar) {
-          // El servidor no nos reconoce (por ejemplo, se reinició la partida)
+          // El servidor no nos reconoce (por ejemplo, el host nos quitó): lo guardado ya
+          // no sirve. Dejamos el nombre escrito para que sea fácil volver a entrar.
+          const nombreAnterior = nombre;
+          olvidarJugador();
           pedirNombre(r.json.message);
+          $('input-nombre').value = nombreAnterior;
         } else if (r.status !== 422) {
           // Error de red o servidor ocupado (no un 422): dejamos reintentar
           miEleccion = null;
@@ -544,6 +690,7 @@
     // correcta === null significa "solo mostrar la posición" (por ej. al recargar con la partida terminada).
     function mostrarResultado(correcta, textoExplicacion, ranking, final) {
       numeroActual = null;
+      mostrarMisPuntosDe(ranking);
 
       // Buscamos al jugador en el ranking (el puesto con empates ya viene del servidor)
       const yo = nombre.toLowerCase();
@@ -639,6 +786,7 @@
           headers: { 'Accept': 'application/json' },
         });
         const estado = await r.json();
+        mostrarMisPuntosDe(estado.ranking);
 
         if (estado.pregunta) {
           mostrarPregunta({
@@ -679,14 +827,6 @@
       entrar(valor);
     });
 
-    $('btn-cambiar').addEventListener('click', () => {
-      sessionStorage.removeItem('trivia.nombre');
-      sessionStorage.removeItem('trivia.token');
-      nombre = '';
-      token = '';
-      pedirNombre('');
-    });
-
     // ================================================================
     // EVENTOS EN VIVO (Reverb + Echo)
     // ================================================================
@@ -705,11 +845,22 @@
         numeroActual = null;
         mostrarPantalla('espera');
         entrar(nombre);
+      })
+      .listen('.JugadorSalio', (e) => {
+        // Solo nos importa si el que salió somos nosotros: el host nos quitó, o salimos
+        // desde otra pestaña de este mismo navegador
+        if (!token || String(e.nombre).toLowerCase() !== nombre.toLowerCase()) return;
+        restaurarBotonSalir();
+        olvidarJugador();
+        pedirNombre(e.quitado ? 'El host te quitó de la partida. Podés volver a entrar con un nombre.' : '');
       });
 
     // ---- Al cargar ----
-    if (nombre) {
-      entrar(nombre);
+    if (nombre && token) {
+      // Hay un jugador guardado: lo validamos con el servidor antes de entrar
+      mostrarPantalla('espera');
+      $('mi-nombre').textContent = nombre;
+      reconectar();
     } else {
       pedirNombre('');
     }

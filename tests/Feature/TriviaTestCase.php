@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\JugadorSalio;
 use App\Events\JugadorUnido;
 use App\Events\PartidaReiniciada;
 use App\Events\PreguntaLanzada;
@@ -50,6 +51,7 @@ abstract class TriviaTestCase extends TestCase
 
         // Los eventos de la trivia no se transmiten: quedan anotados para poder verificarlos
         Event::fake([
+            JugadorSalio::class,
             JugadorUnido::class,
             PartidaReiniciada::class,
             PreguntaLanzada::class,

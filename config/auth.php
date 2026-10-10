@@ -42,6 +42,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Jugadores y host de la trivia (no son usuarios de la base): se identifican en
+        // cada petición con Auth::viaRequest('trivia', ...) en AppServiceProvider.
+        // Solo se usa para autorizar el canal de presencia.
+        'trivia' => [
+            'driver' => 'trivia',
+        ],
     ],
 
     /*
