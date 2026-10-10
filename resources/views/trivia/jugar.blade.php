@@ -195,6 +195,23 @@
     .final h2 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; }
     .final p { margin: 0; color: #c9ccff; font-weight: 600; }
 
+    /* Aviso flotante (sesión vencida, demasiados intentos, actualización en curso) */
+    .aviso-flotante {
+      position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 50;
+      max-width: 608px; margin: 0 auto;
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-radius: 14px;
+      background: var(--panel); border: 2px solid var(--amarillo); color: var(--texto);
+      font-weight: 600; line-height: 1.35;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .55);
+    }
+    .aviso-flotante span { flex: 1; }
+    .aviso-btn {
+      font: inherit; font-weight: 800; flex-shrink: 0;
+      padding: 10px 14px; border: 0; border-radius: 10px;
+      background: #6c5ce7; color: #fff; cursor: pointer;
+    }
+
     @media (max-width: 380px) {
       .opcion { min-height: 100px; font-size: 14px; }
     }
@@ -262,6 +279,12 @@
 
     <p id="texto-siguiente" class="suave centro">Esperando la próxima pregunta...</p>
   </section>
+</div>
+
+<!-- Aviso flotante para problemas del servidor (sesión vencida, demasiados intentos, actualización) -->
+<div id="aviso" class="aviso-flotante oculto" role="status" aria-live="polite">
+  <span id="aviso-texto"></span>
+  <button id="aviso-recargar" class="aviso-btn oculto" type="button">Recargar</button>
 </div>
 
 <script>
@@ -335,8 +358,50 @@
         body: JSON.stringify(datos),
       });
       const json = await respuesta.json().catch(() => ({}));
+      // Sesión vencida, demasiados pedidos o actualización en curso: aviso amigable
+      // (y el mismo texto reemplaza al mensaje técnico del servidor)
+      const aviso = avisarProblema(respuesta.status, json.message);
+      if (aviso) json.message = aviso;
       return { ok: respuesta.ok, status: respuesta.status, json };
     }
+
+    // ================================================================
+    // AVISOS DE PROBLEMAS DEL SERVIDOR (419, 429 y 503)
+    // Sin esto el jugador vería textos como "CSRF token mismatch." o nada.
+    // ================================================================
+    const AVISOS = {
+      419: 'Tu sesión venció por estar mucho rato abierta. Recargá la página para seguir: no perdés tu nombre ni tus puntos.',
+      429: 'Demasiados intentos seguidos. Esperá un minuto y probá de nuevo.',
+      503: 'Estamos actualizando la trivia. Probá de nuevo en unos segundos.',
+    };
+    let timerAviso = null;
+
+    // Devuelve el texto amigable para ese código HTTP, o null si no es uno de estos casos.
+    // El juego también responde 503 con mensajes propios ("El servidor está ocupado..."):
+    // esos se dejan como están; solo se reemplaza el genérico del modo mantenimiento.
+    function textoDeAviso(status, mensajeServidor) {
+      if (status === 503 && mensajeServidor && mensajeServidor !== 'Service Unavailable') return null;
+      return AVISOS[status] || null;
+    }
+
+    // Muestra el aviso flotante abajo. El de sesión vencida queda fijo con el botón
+    // "Recargar" (hasta recargar nada va a funcionar); los otros se van solos.
+    function avisarProblema(status, mensajeServidor) {
+      const texto = textoDeAviso(status, mensajeServidor);
+      if (!texto) return null;
+
+      $('aviso-texto').textContent = texto;
+      $('aviso-recargar').classList.toggle('oculto', status !== 419);
+      $('aviso').classList.remove('oculto');
+
+      clearTimeout(timerAviso);
+      if (status !== 419) {
+        timerAviso = setTimeout(() => $('aviso').classList.add('oculto'), 8000);
+      }
+      return texto;
+    }
+
+    $('aviso-recargar').addEventListener('click', () => location.reload());
 
     // ================================================================
     // NOMBRE: anotarse en el servidor (nombres únicos)
@@ -433,7 +498,9 @@
           pedirNombre('');
         } else {
           // Servidor ocupado o demasiados pedidos: no borramos nada, puede reintentar con "Entrar"
-          pedirNombre('No se pudo volver a entrar (error ' + r.status + '). Tocá "Entrar" para reintentar.');
+          pedirNombre(AVISOS[r.status]
+            ? r.json.message
+            : 'No se pudo volver a entrar (error ' + r.status + '). Tocá "Entrar" para reintentar.');
         }
       } catch (e) {
         pedirNombre('No hay conexión con el servidor. Tocá "Entrar" para reintentar.');
@@ -785,7 +852,14 @@
         const r = await fetch(RUTAS.estado + '?nombre=' + encodeURIComponent(nombre), {
           headers: { 'Accept': 'application/json' },
         });
-        const estado = await r.json();
+        const estado = await r.json().catch(() => ({}));
+
+        if (!r.ok) {
+          // Por ejemplo, 503 durante una actualización: avisamos y esperamos la próxima pregunta
+          avisarProblema(r.status, estado.message);
+          mostrarPantalla('espera');
+          return;
+        }
         mostrarMisPuntosDe(estado.ranking);
 
         if (estado.pregunta) {

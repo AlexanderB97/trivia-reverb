@@ -402,11 +402,35 @@
         body: JSON.stringify(datos),
       });
       const json = await respuesta.json().catch(() => ({}));
-      if (!respuesta.ok) {
-        const error = new Error(json.message || 'Error ' + respuesta.status);
-        error.status = respuesta.status;
-        throw error;
-      }
+      if (!respuesta.ok) throw errorDe(respuesta.status, json.message);
+      return json;
+    }
+
+    // Textos amigables para los problemas del servidor que no son del juego. Sin esto el
+    // cartel de error mostraría "CSRF token mismatch." o "Too Many Attempts.".
+    const AVISOS = {
+      419: 'Tu sesión venció por estar mucho rato abierta. Recargá la página (F5) y volvé a ingresar el PIN si te lo pide.',
+      429: 'Demasiados pedidos seguidos. Esperá un minuto y probá de nuevo.',
+      503: 'Estamos actualizando la trivia. Probá de nuevo en unos segundos.',
+    };
+
+    // Arma el error de un pedido que falló: mensaje para mostrar + código HTTP en .status.
+    // El juego también responde 503 con mensajes propios ("El servidor está ocupado...",
+    // "¿Está corriendo reverb:start?"): esos se respetan; solo se reemplaza el genérico
+    // del modo mantenimiento.
+    function errorDe(status, mensajeServidor) {
+      const propioDelJuego = status === 503 && mensajeServidor && mensajeServidor !== 'Service Unavailable';
+      const amigable = propioDelJuego ? null : AVISOS[status];
+      const error = new Error(amigable || mensajeServidor || 'Error ' + status);
+      error.status = status;
+      return error;
+    }
+
+    // GET /trivia/estado. Si el servidor responde con error, lanza el mismo tipo de error que post()
+    async function pedirEstado() {
+      const respuesta = await fetch(RUTAS.estado, { headers: { 'Accept': 'application/json' } });
+      const json = await respuesta.json().catch(() => ({}));
+      if (!respuesta.ok) throw errorDe(respuesta.status, json.message);
       return json;
     }
 
@@ -915,10 +939,12 @@
     }
 
     function refrescarBanco() {
-      fetch(RUTAS.estado, { headers: { 'Accept': 'application/json' } })
-        .then((r) => r.json())
+      pedirEstado()
         .then((estado) => mostrarBanco(estado.banco))
-        .catch(() => {});
+        .catch((e) => {
+          // Es solo un refresco: una falla de red se ignora, pero un 419/429/503 se avisa
+          if (AVISOS[e.status]) mostrarError(e.message);
+        });
     }
 
     // "Generar 10 más": UN pedido a la IA que trae 10 preguntas y las guarda en el banco
@@ -1029,8 +1055,7 @@
     // AL CARGAR: recuperar el estado (por si el host recargó la página)
     // ================================================================
 
-    fetch(RUTAS.estado, { headers: { 'Accept': 'application/json' } })
-      .then((r) => r.json())
+    pedirEstado()
       .then((estado) => {
         estado.jugadores.forEach((n) => agregarJugador(n));
 
@@ -1066,7 +1091,8 @@
         }
         actualizarBotones();
       })
-      .catch(() => mostrarError('No se pudo cargar el estado de la partida.'));
+      // Con 419/429/503 se muestra el aviso amigable; con cualquier otra falla, el genérico
+      .catch((e) => mostrarError(AVISOS[e.status] ? e.message : 'No se pudo cargar el estado de la partida.'));
   });
 </script>
 </body>
